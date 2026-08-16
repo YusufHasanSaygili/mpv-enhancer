@@ -4,6 +4,7 @@ import sys
 from collections.abc import Sequence
 from importlib.resources import files
 
+from PySide6.QtCore import QSettings, QTimer
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
 
@@ -12,7 +13,9 @@ from mpv_enhancer.infrastructure.logging_config import (
     configure_logging,
     shutdown_logging,
 )
+from mpv_enhancer.infrastructure.mpv.discovery import MpvDiscoveryService
 from mpv_enhancer.infrastructure.paths import AppDataPaths
+from mpv_enhancer.infrastructure.preferences import MpvPreferenceStore
 from mpv_enhancer.ui.main_window import MainWindow
 
 APPLICATION_NAME = "MPV Enhancer"
@@ -55,8 +58,23 @@ def main() -> int:
     logger = configure_logging(AppDataPaths.for_current_user())
     logger.info("application_started version=%s", __version__)
     try:
+        preference_store = MpvPreferenceStore(QSettings())
+        discovery = MpvDiscoveryService()
+        diagnostics = discovery.discover(preference_store.selected_mpv_path())
+        logger.info(
+            "mpv_discovery status=%s source=%s",
+            diagnostics.status.value,
+            diagnostics.source.value if diagnostics.source else "none",
+        )
         window = MainWindow()
+        window.configure_mpv_preferences(
+            preference_store,
+            discovery,
+            diagnostics,
+        )
         window.show()
+        if not diagnostics.is_available:
+            QTimer.singleShot(0, window.open_preferences)
         return app.exec()
     except Exception:
         logger.exception("application_failed")

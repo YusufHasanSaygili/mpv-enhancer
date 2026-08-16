@@ -45,6 +45,14 @@ python -m pytest
 The current application opens an English three-region desktop shell. Playback,
 queue behavior, and per-item settings will be added in later milestones.
 
+## mpv setup
+
+MPV Enhancer validates mpv by running `mpv.exe --version` without a shell. It
+checks a path selected under **Settings > Preferences**, the development-only
+`MPV_ENHANCER_MPV_PATH` environment variable, `mpv.exe` on `PATH`, and standard
+Windows install locations, in that order. If mpv is missing or invalid, the app
+opens an English setup and diagnostics dialog instead of crashing.
+
 ## Local data and privacy
 
 MPV Enhancer keeps runtime data outside the source repository. On Windows,

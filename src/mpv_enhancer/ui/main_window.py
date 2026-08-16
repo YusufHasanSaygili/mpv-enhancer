@@ -1,6 +1,7 @@
 """Main application window and first-slice layout placeholders."""
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -10,6 +11,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from mpv_enhancer.infrastructure.mpv.discovery import (
+    MpvDiagnostics,
+    MpvDiscoverer,
+)
+from mpv_enhancer.infrastructure.preferences import MpvPreferenceStore
+from mpv_enhancer.ui.preferences_dialog import PreferencesDialog
 
 
 class MainWindow(QMainWindow):
@@ -21,6 +29,16 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("MPV Enhancer")
         self.resize(1200, 720)
         self.setMinimumSize(900, 560)
+        self._preference_store: MpvPreferenceStore | None = None
+        self._mpv_discovery: MpvDiscoverer | None = None
+        self._mpv_diagnostics: MpvDiagnostics | None = None
+        self._preferences_dialog: PreferencesDialog | None = None
+
+        settings_menu = self.menuBar().addMenu("Settings")
+        preferences_action = QAction("Preferences...", self)
+        preferences_action.setObjectName("preferencesAction")
+        preferences_action.triggered.connect(self.open_preferences)
+        settings_menu.addAction(preferences_action)
 
         workspace = QWidget(self)
         workspace.setObjectName("workspace")
@@ -49,6 +67,52 @@ class MainWindow(QMainWindow):
         layout.addWidget(queue, 3)
         self.setCentralWidget(workspace)
         self.statusBar().showMessage("Ready")
+
+    def configure_mpv_preferences(
+        self,
+        preference_store: MpvPreferenceStore,
+        discovery: MpvDiscoverer,
+        diagnostics: MpvDiagnostics,
+    ) -> None:
+        """Attach machine-local mpv preferences to the application shell."""
+        self._preference_store = preference_store
+        self._mpv_discovery = discovery
+        self._mpv_diagnostics = diagnostics
+        self._show_mpv_status(diagnostics)
+
+    def open_preferences(self) -> None:
+        """Open the non-blocking mpv setup and diagnostics dialog."""
+        if self._preference_store is None or self._mpv_discovery is None:
+            return
+        if self._preferences_dialog is not None:
+            self._preferences_dialog.raise_()
+            self._preferences_dialog.activateWindow()
+            return
+
+        dialog = PreferencesDialog(
+            self._preference_store,
+            self._mpv_discovery,
+            self,
+        )
+        self._preferences_dialog = dialog
+        dialog.finished.connect(self._preferences_finished)
+        dialog.open()
+
+    def _preferences_finished(self, _result: int) -> None:
+        self._preferences_dialog = None
+        if self._preference_store is None or self._mpv_discovery is None:
+            return
+        diagnostics = self._mpv_discovery.discover(
+            self._preference_store.selected_mpv_path()
+        )
+        self._mpv_diagnostics = diagnostics
+        self._show_mpv_status(diagnostics)
+
+    def _show_mpv_status(self, diagnostics: MpvDiagnostics) -> None:
+        if diagnostics.is_available:
+            self.statusBar().showMessage(f"mpv {diagnostics.version} is ready")
+        else:
+            self.statusBar().showMessage("mpv setup is required")
 
     def _create_region(
         self,
