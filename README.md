@@ -45,6 +45,17 @@ python -m pytest
 The current application opens an English three-region desktop shell. Playback,
 queue behavior, and per-item settings will be added in later milestones.
 
+## Local data and privacy
+
+MPV Enhancer keeps runtime data outside the source repository. On Windows,
+application data is stored below `%APPDATA%\MPV Enhancer`, while caches, logs,
+and crash-report directories are stored below `%LOCALAPPDATA%\MPV Enhancer`.
+
+Normal logs are size-limited, rotating JSON Lines files. Absolute paths passed
+as logging arguments are replaced with `<redacted-path>` so media and user
+profile locations are not written to normal diagnostics. The application does
+not send telemetry or upload logs.
+
 ## License
 
 MPV Enhancer is available under the [MIT License](LICENSE).
