@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mpv-enhancer"
+version = "0.1.0.dev0"
+description = "Windows-first desktop playlist controller and playback shell for mpv"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["mpv", "playlist", "pyside6", "windows"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<10",
+]
+
+[project.urls]
+Homepage = "https://github.com/YusufHasanSaygili/mpv-enhancer"
+Issues = "https://github.com/YusufHasanSaygili/mpv-enhancer/issues"
+Repository = "https://github.com/YusufHasanSaygili/mpv-enhancer.git"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mpv_enhancer"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
