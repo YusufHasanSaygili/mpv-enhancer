@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a focused improvement to MPV Enhancer.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement. Please describe the user need without including private playlists, paths, media, or account information.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or user need
+      description: What workflow is difficult or currently impossible?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the result you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workarounds or alternative designs you considered.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: This request relates to MPV Enhancer's desktop playlist or playback workflow.
+          required: true
+        - label: I removed personal paths, private media details, credentials, and other sensitive information.
+          required: true

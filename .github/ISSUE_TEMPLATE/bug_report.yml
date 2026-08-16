@@ -1,0 +1,64 @@
+name: Bug report
+description: Report reproducible incorrect behavior in MPV Enhancer.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve MPV Enhancer. Do not attach playlists, logs, screenshots, or media that contain personal or copyrighted information.
+  - type: input
+    id: version
+    attributes:
+      label: MPV Enhancer version
+      description: Enter the release version or commit identifier.
+      placeholder: v0.1 or a commit identifier
+    validations:
+      required: true
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: mpv-version
+    attributes:
+      label: mpv version
+      description: Enter the output of `mpv --version` without any local paths.
+    validations:
+      required: false
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic file names and remove personal paths or media details.
+      placeholder: |
+        1. Start MPV Enhancer.
+        2. Perform an action.
+        3. Observe the result.
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Share only information that is safe to publish.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed personal paths, private media details, credentials, and other sensitive information.
+          required: true

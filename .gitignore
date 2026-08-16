@@ -1,0 +1,50 @@
+# Development execution package (local planning material)
+MPV-Enhancer-Development-Package/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Builds and packaging output
+build/
+dist/
+release/
+*.egg-info/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.key
+
+# User sessions and personal media data
+*.mpeplaylist
+*.mpeplaylist.autosave
+autosave/
+user-data/
+recent-files.json
+media/
+test-media-private/
+
+# Runtime diagnostics
+*.log
+logs/
+*.dmp
+crash-reports/
+screenshots/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
