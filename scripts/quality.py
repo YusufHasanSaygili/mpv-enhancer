@@ -6,10 +6,12 @@ import sys
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+QUALITY_BUILD_DIRECTORY = REPOSITORY_ROOT / "build"
 SECRET_SCAN_EXCLUSIONS = r"(^|[\\/])uv\.lock$"
 
 
 def main() -> int:
+    QUALITY_BUILD_DIRECTORY.mkdir(parents=True, exist_ok=True)
     checks = (
         (
             "Ruff format",
