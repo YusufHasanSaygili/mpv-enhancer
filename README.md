@@ -9,9 +9,9 @@ application will use Python, PySide6, and Qt Widgets.
 
 ## Project status
 
-The public repository foundation is being established. Installation and usage
-instructions will be added when the first runnable development version is
-available.
+The public repository foundation is available. The Python project bootstrap is
+the next planned development milestone; installation and usage instructions
+will be added with the first runnable development version.
 
 ## Contributing
 
