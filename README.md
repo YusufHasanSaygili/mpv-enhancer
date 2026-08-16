@@ -28,6 +28,7 @@ MPV Enhancer uses Python 3.12. The recommended workflow uses
 uv sync --extra dev
 uv run python -c "import mpv_enhancer; print(mpv_enhancer.__version__)"
 uv run pytest
+uv run mpv-enhancer
 ```
 
 Contributors who use standard `pip` can create and populate a virtual
@@ -41,9 +42,8 @@ python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
-The repository intentionally contains only the importable package foundation
-at this stage. A runnable desktop entry point will be added in the application
-shell milestone.
+The current application opens an English three-region desktop shell. Playback,
+queue behavior, and per-item settings will be added in later milestones.
 
 ## License
 

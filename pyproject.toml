@@ -20,11 +20,17 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
 ]
-dependencies = []
+dependencies = [
+    "PySide6>=6.8,<7",
+]
+
+[project.scripts]
+mpv-enhancer = "mpv_enhancer.app:main"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3,<10",
+    "pytest-qt>=4.4,<5",
 ]
 
 [project.urls]
