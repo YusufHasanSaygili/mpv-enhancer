@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
@@ -14,7 +14,7 @@ MPV_PATH_ENVIRONMENT_VARIABLE = "MPV_ENHANCER_MPV_PATH"
 _VERSION_PATTERN = re.compile(r"^mpv(?:\.exe)?\s+v?([^\s]+)", re.IGNORECASE)
 
 
-class MpvDiagnosticsStatus(str, Enum):
+class MpvDiagnosticsStatus(StrEnum):
     """Outcome of executable discovery and validation."""
 
     AVAILABLE = "available"
@@ -22,7 +22,7 @@ class MpvDiagnosticsStatus(str, Enum):
     INVALID = "invalid"
 
 
-class MpvDiscoverySource(str, Enum):
+class MpvDiscoverySource(StrEnum):
     """Source that supplied an mpv executable candidate."""
 
     SELECTED = "selected"

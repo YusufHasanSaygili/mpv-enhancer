@@ -117,9 +117,12 @@ class PreferencesDialog(QDialog):
         self._diagnostics = self._discovery.discover(selected_path)
         diagnostics = self._diagnostics
         self._status_value.setText(diagnostics.status.value.replace("_", " ").title())
-        self._source_value.setText(
-            _SOURCE_LABELS.get(diagnostics.source, "Not available")
+        source_text = (
+            "Not available"
+            if diagnostics.source is None
+            else _SOURCE_LABELS[diagnostics.source]
         )
+        self._source_value.setText(source_text)
         self._version_value.setText(diagnostics.version or "Not available")
         self._message.setText(diagnostics.message)
 

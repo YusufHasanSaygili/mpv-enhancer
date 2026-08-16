@@ -29,8 +29,12 @@ mpv-enhancer = "mpv_enhancer.app:main"
 
 [project.optional-dependencies]
 dev = [
+    "detect-secrets>=1.5,<2",
+    "mypy>=1.15,<2",
     "pytest>=8.3,<10",
+    "pytest-cov>=6,<8",
     "pytest-qt>=4.4,<5",
+    "ruff>=0.12,<1",
 ]
 
 [project.urls]
@@ -44,3 +48,25 @@ packages = ["src/mpv_enhancer"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/mpv_enhancer"]
+pretty = true
+
+[tool.coverage.run]
+branch = true
+source = ["mpv_enhancer"]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = true

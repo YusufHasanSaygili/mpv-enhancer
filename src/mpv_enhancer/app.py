@@ -47,7 +47,7 @@ def load_application_icon() -> QIcon:
     """Load the redistribution-safe placeholder icon bundled with the app."""
     icon_data = files("mpv_enhancer.assets.icons").joinpath("app-icon.svg").read_bytes()
     pixmap = QPixmap()
-    if not pixmap.loadFromData(icon_data, "SVG"):
+    if not pixmap.loadFromData(icon_data):
         raise RuntimeError("The bundled application icon could not be loaded.")
     return QIcon(pixmap)
 
