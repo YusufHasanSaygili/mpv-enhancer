@@ -8,6 +8,11 @@ from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from mpv_enhancer import __version__
+from mpv_enhancer.infrastructure.logging_config import (
+    configure_logging,
+    shutdown_logging,
+)
+from mpv_enhancer.infrastructure.paths import AppDataPaths
 from mpv_enhancer.ui.main_window import MainWindow
 
 APPLICATION_NAME = "MPV Enhancer"
@@ -47,6 +52,15 @@ def load_application_icon() -> QIcon:
 def main() -> int:
     """Launch the desktop application and return its process exit code."""
     app = create_application()
-    window = MainWindow()
-    window.show()
-    return app.exec()
+    logger = configure_logging(AppDataPaths.for_current_user())
+    logger.info("application_started version=%s", __version__)
+    try:
+        window = MainWindow()
+        window.show()
+        return app.exec()
+    except Exception:
+        logger.exception("application_failed")
+        raise
+    finally:
+        logger.info("application_stopped")
+        shutdown_logging(logger)
