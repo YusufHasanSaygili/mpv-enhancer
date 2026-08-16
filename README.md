@@ -31,6 +31,15 @@ uv run pytest
 uv run mpv-enhancer
 ```
 
+Run the complete local quality gate with one command:
+
+```powershell
+uv run python scripts/quality.py
+```
+
+The gate verifies Ruff formatting and linting, strict Mypy checks, the complete
+pytest/pytest-qt suite with coverage, and a tracked-source secret scan.
+
 Contributors who use standard `pip` can create and populate a virtual
 environment instead:
 

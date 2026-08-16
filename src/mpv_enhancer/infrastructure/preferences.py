@@ -14,7 +14,8 @@ class MpvPreferenceStore:
         self._settings = settings
 
     def selected_mpv_path(self) -> Path | None:
-        value = self._settings.value(_MPV_PATH_KEY, "", type=str).strip()
+        stored_value = self._settings.value(_MPV_PATH_KEY, "", type=str)
+        value = stored_value.strip() if isinstance(stored_value, str) else ""
         return Path(value).expanduser().resolve() if value else None
 
     def set_selected_mpv_path(self, executable: Path) -> None:
