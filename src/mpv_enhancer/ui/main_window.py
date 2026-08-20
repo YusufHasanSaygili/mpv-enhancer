@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
+from uuid import UUID
 
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
@@ -17,6 +18,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from mpv_enhancer.domain.models import QueueItem
+from mpv_enhancer.domain.selection_settings import (
+    SettingPatch,
+    apply_selection_patch,
+    reset_all_selection_overrides,
+    reset_selection_setting,
+)
+from mpv_enhancer.domain.settings import SettingKey
 from mpv_enhancer.infrastructure.mpv.discovery import (
     MpvDiagnostics,
     MpvDiscoverer,
@@ -137,6 +146,10 @@ class MainWindow(QMainWindow):
         self.queue_view.selectionSummaryChanged.connect(
             self._settings_selection_changed
         )
+        self.settings_panel.patchRequested.connect(self._apply_settings_patch)
+        self.settings_panel.resetSettingRequested.connect(self._reset_selected_setting)
+        self.settings_panel.resetAllRequested.connect(self._reset_all_selected_settings)
+        self.settings_panel.applyRequested.connect(self._apply_selected_settings)
         self._settings_selection_changed(self.queue_view.selection_summary)
 
         queue_menu = self.menuBar().addMenu("Queue")
@@ -201,6 +214,66 @@ class MainWindow(QMainWindow):
             item for item in self.queue_model.items if item.item_id in selected_ids
         )
         self.settings_panel.set_selected_items(selected_items)
+
+    def _apply_settings_patch(self, patch: SettingPatch) -> None:
+        selected_ids = self.queue_view.selected_item_ids
+        if not selected_ids:
+            return
+        self._replace_selected_overrides(
+            apply_selection_patch(self.queue_model.items, selected_ids, patch),
+            selected_ids,
+        )
+
+    def _reset_selected_setting(self, key: SettingKey) -> None:
+        selected_ids = self.queue_view.selected_item_ids
+        if not selected_ids:
+            return
+        self._replace_selected_overrides(
+            reset_selection_setting(self.queue_model.items, selected_ids, key),
+            selected_ids,
+        )
+
+    def _reset_all_selected_settings(self) -> None:
+        selected_ids = self.queue_view.selected_item_ids
+        if not selected_ids:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Reset All Overrides",
+            "Reset all overrides for the selected queue items?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer is QMessageBox.StandardButton.Yes:
+            self._replace_selected_overrides(
+                reset_all_selection_overrides(self.queue_model.items, selected_ids),
+                selected_ids,
+            )
+
+    def _apply_selected_settings(self) -> None:
+        selected_ids = self.queue_view.selected_item_ids
+        current_id = self.queue_model.current_item_id
+        if (
+            current_id in selected_ids
+            and self._playback_controller is not None
+            and self._playback_controller.refresh_current_settings()
+        ):
+            self.statusBar().showMessage("Settings applied to the current item")
+
+    def _replace_selected_overrides(
+        self,
+        items: tuple[QueueItem, ...],
+        selected_ids: tuple[UUID, ...],
+    ) -> None:
+        current_id = self.queue_model.current_item_id
+        self.queue_model.replace_items(items, current_id)
+        self.queue_view.select_item_ids(selected_ids)
+        self._settings_selection_changed(self.queue_view.selection_summary)
+        if current_id in selected_ids and self._playback_controller is not None:
+            self._playback_controller.refresh_current_settings()
+        self.statusBar().showMessage(
+            f"Settings updated for {len(selected_ids)} queue item(s)"
+        )
 
     def request_clear_queue(self) -> None:
         """Clear the queue only after an explicit destructive confirmation."""
