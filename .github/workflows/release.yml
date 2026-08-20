@@ -78,6 +78,7 @@ jobs:
         shell: pwsh
         run: |
           $lines = Get-ChildItem dist -File |
+            Where-Object { -not $_.Name.StartsWith('.') } |
             Sort-Object Name |
             ForEach-Object {
               $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
@@ -90,7 +91,10 @@ jobs:
         run: |
           $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:GITHUB_REF_NAME"
           $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          $assets = Get-ChildItem dist -File | Sort-Object Name | ForEach-Object { "- $($_.Name)" }
+          $assets = Get-ChildItem dist -File |
+            Where-Object { -not $_.Name.StartsWith('.') } |
+            Sort-Object Name |
+            ForEach-Object { "- $($_.Name)" }
           $checksums = Get-Content dist/SHA256SUMS.txt | ForEach-Object { "- ``$($_)``" }
           $evidence = @(
             "# MPV Enhancer $env:GITHUB_REF_NAME release evidence",
@@ -187,10 +191,11 @@ jobs:
               throw "Invalid checksum line: $line"
             }
             $expectedHash = $Matches[1]
-            $assetPath = Join-Path public-assets $Matches[2]
+            $assetName = $Matches[2]
+            $assetPath = Join-Path public-assets $assetName
             $actualHash = (Get-FileHash -Algorithm SHA256 $assetPath).Hash.ToLowerInvariant()
             if ($actualHash -ne $expectedHash) {
-              throw "Checksum mismatch for $($Matches[2])."
+              throw "Checksum mismatch for $assetName."
             }
           }
 
