@@ -16,6 +16,8 @@ from mpv_enhancer.domain.models import Playlist, QueueItem
 from mpv_enhancer.domain.selection_settings import SelectedSettingState
 from mpv_enhancer.domain.settings import (
     SETTING_SPEC_REGISTRY,
+    EffectivePlaybackSettings,
+    LanguagePreferences,
     PlaybackSettings,
     SettingKey,
 )
@@ -26,6 +28,10 @@ from mpv_enhancer.infrastructure.mpv.discovery import (
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.playback import MpvJsonPlaybackAdapter
+from mpv_enhancer.infrastructure.mpv.tracks import (
+    normalize_mpv_track_list,
+    resolve_track_availability,
+)
 from mpv_enhancer.ui.main_window import MainWindow
 from mpv_enhancer.ui.playback_controller import PlaybackController
 from mpv_enhancer.ui.queue_model import QueueListModel
@@ -63,6 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise RuntimeError("The MPV Enhancer release shell did not become visible.")
         _verify_queue_workflow(window)
         _verify_no_leak_playback_settings()
+        _verify_multilingual_track_selection()
         if arguments.mpv is not None:
             _verify_playback_workflow(app, window, arguments.mpv)
     finally:
@@ -72,7 +79,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise RuntimeError("The MPV Enhancer release shell did not close cleanly.")
     result = (
         "Installed MPV Enhancer passed the 20-file queue, episodes 2/4/6 "
-        "multi-edit, mixed-state, and no-leak settings workflows."
+        "multi-edit, mixed-state, no-leak settings, and episode 6 Turkish / "
+        "episode 7 Spanish subtitle workflows."
     )
     if arguments.mpv is not None:
         result += " Embedded local playback with a Unicode leading-hyphen path passed."
@@ -197,6 +205,44 @@ def _verify_no_leak_playback_settings() -> None:
         ("set_property", "audio-delay", 0.0),
     ]:
         raise RuntimeError("Managed settings leaked into the next episode.")
+
+
+def _verify_multilingual_track_selection() -> None:
+    scenarios = (
+        (
+            "Episode 6",
+            LanguagePreferences.parse("tr,tur,en"),
+            [
+                {"type": "sub", "id": 2, "lang": "eng", "default": True},
+                {"type": "sub", "id": 6, "lang": "tur"},
+            ],
+            6,
+        ),
+        (
+            "Episode 7",
+            LanguagePreferences.parse("es,spa,en"),
+            [
+                {"type": "sub", "id": 3, "lang": "eng", "default": True},
+                {"type": "sub", "id": 7, "lang": "spa"},
+            ],
+            7,
+        ),
+    )
+    for label, languages, raw_tracks, expected_id in scenarios:
+        settings = EffectivePlaybackSettings(
+            speed=1.0,
+            panscan=0.0,
+            volume=100.0,
+            mute=False,
+            subtitle_visibility=True,
+            subtitle_languages=languages,
+        )
+        availability = resolve_track_availability(
+            settings,
+            normalize_mpv_track_list(raw_tracks),
+        )
+        if availability.subtitle.selection.track_id != expected_id:
+            raise RuntimeError(f"{label} did not select its preferred subtitle.")
 
 
 def _verify_playback_workflow(
