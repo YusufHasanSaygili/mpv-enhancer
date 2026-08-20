@@ -81,4 +81,4 @@ def test_flags_are_enabled_and_selectable_for_valid_rows() -> None:
 
     assert flags & Qt.ItemFlag.ItemIsEnabled
     assert flags & Qt.ItemFlag.ItemIsSelectable
-    assert model.flags(QModelIndex()) == Qt.ItemFlag.NoItemFlags
+    assert model.flags(QModelIndex()) == Qt.ItemFlag.ItemIsDropEnabled

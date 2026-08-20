@@ -1,17 +1,21 @@
 """Qt list model adapter for the ordered queue domain."""
 
+from collections.abc import Sequence
 from enum import IntEnum
 from uuid import UUID
 
 from PySide6.QtCore import (
     QAbstractListModel,
     QByteArray,
+    QMimeData,
     QModelIndex,
     QPersistentModelIndex,
     Qt,
 )
 
 from mpv_enhancer.domain.models import Playlist, QueueItem
+
+QUEUE_ITEM_MIME_TYPE = "application/x-mpv-enhancer-queue-item-uuid"
 
 
 class QueueRole(IntEnum):
@@ -86,10 +90,67 @@ class QueueListModel(QAbstractListModel):
         self,
         index: QModelIndex | QPersistentModelIndex,
     ) -> Qt.ItemFlag:
-        """Expose valid rows as enabled and selectable only."""
+        """Expose selection and internal drag/drop capabilities."""
         if not index.isValid():
-            return Qt.ItemFlag.NoItemFlags
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            return Qt.ItemFlag.ItemIsDropEnabled
+        return (
+            Qt.ItemFlag.ItemIsEnabled
+            | Qt.ItemFlag.ItemIsSelectable
+            | Qt.ItemFlag.ItemIsDragEnabled
+            | Qt.ItemFlag.ItemIsDropEnabled
+        )
+
+    def mimeTypes(self) -> list[str]:
+        """Expose one private UUID-only format for internal queue moves."""
+        return [QUEUE_ITEM_MIME_TYPE]
+
+    def mimeData(self, indexes: Sequence[QModelIndex]) -> QMimeData:
+        """Encode one dragged queue identity without copying its metadata."""
+        mime_data = QMimeData()
+        first_index = next((index for index in indexes if index.isValid()), None)
+        if first_index is not None:
+            item = self._playlist.item_at(first_index.row())
+            mime_data.setData(QUEUE_ITEM_MIME_TYPE, item.item_id.bytes)
+        return mime_data
+
+    def supportedDropActions(self) -> Qt.DropAction:
+        """Allow true moves only for internal queue drags."""
+        return Qt.DropAction.MoveAction
+
+    def dropMimeData(
+        self,
+        data: QMimeData,
+        action: Qt.DropAction,
+        row: int,
+        column: int,
+        parent: QModelIndex | QPersistentModelIndex,
+    ) -> bool:
+        """Move the encoded UUID into a Qt insertion slot."""
+        if action == Qt.DropAction.IgnoreAction:
+            return True
+        if (
+            action != Qt.DropAction.MoveAction
+            or column > 0
+            or not data.hasFormat(QUEUE_ITEM_MIME_TYPE)
+        ):
+            return False
+        try:
+            encoded_item_id = data.data(QUEUE_ITEM_MIME_TYPE).data()
+            item_id = UUID(bytes=bytes(encoded_item_id))
+            source_row = self._playlist.index_of(item_id)
+        except (KeyError, ValueError):
+            return False
+
+        insertion_row = parent.row() if row < 0 and parent.isValid() else row
+        if insertion_row < 0:
+            insertion_row = len(self._playlist)
+        insertion_row = min(insertion_row, len(self._playlist))
+        destination_row = (
+            insertion_row - 1 if source_row < insertion_row else insertion_row
+        )
+        destination_row = min(destination_row, len(self._playlist) - 1)
+        self.move_item(source_row, destination_row)
+        return True
 
     def insert_item(self, row: int, item: QueueItem) -> None:
         """Insert one domain item with a matching Qt rows notification."""

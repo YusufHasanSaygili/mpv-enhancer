@@ -1,20 +1,62 @@
 """Queue view support for external Explorer file drops."""
 
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import (
+    QModelIndex,
+    QPersistentModelIndex,
+    QPoint,
+    QRect,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import (
+    QAction,
     QDragEnterEvent,
     QDragLeaveEvent,
     QDragMoveEvent,
     QDropEvent,
+    QKeySequence,
     QPainter,
     QPaintEvent,
     QPen,
 )
-from PySide6.QtWidgets import QAbstractItemView, QListView, QStyle, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QListView,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QWidget,
+)
 
 from mpv_enhancer.domain.models import QueueItem
 from mpv_enhancer.ui.file_drop import ExternalFileDrop, parse_external_file_drop
-from mpv_enhancer.ui.queue_model import QueueListModel
+from mpv_enhancer.ui.queue_model import QUEUE_ITEM_MIME_TYPE, QueueListModel
+
+
+class QueueDragHandleDelegate(QStyledItemDelegate):
+    """Paint a compact three-line drag handle before each queue title."""
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        text_option = QStyleOptionViewItem(option)
+        text_option.rect = text_option.rect.adjusted(24, 0, 0, 0)
+        super().paint(painter, text_option, index)
+
+        handle = QRect(option.rect.left() + 6, option.rect.center().y() - 5, 12, 10)
+        painter.save()
+        painter.setPen(QPen(option.palette.mid().color(), 2))
+        for offset in (0, 5, 10):
+            painter.drawLine(
+                handle.left(),
+                handle.top() + offset,
+                handle.right(),
+                handle.top() + offset,
+            )
+        painter.restore()
 
 
 class QueueDropListView(QListView):
@@ -35,8 +77,22 @@ class QueueDropListView(QListView):
         self.setModel(model)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
-        self.setDefaultDropAction(Qt.DropAction.CopyAction)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        self.setItemDelegate(QueueDragHandleDelegate(self))
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+        move_up_action = QAction("Move queue item up", self)
+        move_up_action.setShortcut(QKeySequence("Alt+Up"))
+        move_up_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        move_up_action.triggered.connect(self.move_current_up)
+        self.addAction(move_up_action)
+
+        move_down_action = QAction("Move queue item down", self)
+        move_down_action.setShortcut(QKeySequence("Alt+Down"))
+        move_down_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        move_down_action.triggered.connect(self.move_current_down)
+        self.addAction(move_down_action)
 
     @property
     def insertion_row(self) -> int | None:
@@ -45,19 +101,29 @@ class QueueDropListView(QListView):
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         """Accept URL drags so invalid entries can receive a clear result."""
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasFormat(QUEUE_ITEM_MIME_TYPE):
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        elif event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         """Track and repaint the insertion row while a URL drag moves."""
-        if not event.mimeData().hasUrls():
+        if not (
+            event.mimeData().hasUrls()
+            or event.mimeData().hasFormat(QUEUE_ITEM_MIME_TYPE)
+        ):
             self._set_insertion_row(None)
             event.ignore()
             return
         self._set_insertion_row(self._insertion_row_at(event.position().toPoint()))
-        event.acceptProposedAction()
+        if event.mimeData().hasFormat(QUEUE_ITEM_MIME_TYPE):
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        else:
+            event.acceptProposedAction()
 
     def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
         """Remove the insertion indicator when the pointer leaves the queue."""
@@ -66,6 +132,24 @@ class QueueDropListView(QListView):
 
     def dropEvent(self, event: QDropEvent) -> None:
         """Insert every supported URL in order and report partial rejection."""
+        if event.mimeData().hasFormat(QUEUE_ITEM_MIME_TYPE):
+            insertion_row = self._insertion_row
+            if insertion_row is None:
+                insertion_row = self._insertion_row_at(event.position().toPoint())
+            moved = self._queue_model.dropMimeData(
+                event.mimeData(),
+                Qt.DropAction.MoveAction,
+                insertion_row,
+                0,
+                QModelIndex(),
+            )
+            self._set_insertion_row(None)
+            if moved:
+                event.setDropAction(Qt.DropAction.MoveAction)
+                event.accept()
+            else:
+                event.ignore()
+            return
         if not event.mimeData().hasUrls():
             self._set_insertion_row(None)
             event.ignore()
@@ -79,6 +163,14 @@ class QueueDropListView(QListView):
         self.dropMessage.emit(_drop_result_message(result))
         self._set_insertion_row(None)
         event.acceptProposedAction()
+
+    def move_current_up(self) -> None:
+        """Move the current row up once, preserving its UUID and metadata."""
+        self._move_current_by(-1)
+
+    def move_current_down(self) -> None:
+        """Move the current row down once, preserving its UUID and metadata."""
+        self._move_current_by(1)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         """Paint a high-contrast horizontal marker at the pending insert row."""
@@ -129,6 +221,16 @@ class QueueDropListView(QListView):
             return
         self._insertion_row = row
         self.viewport().update()
+
+    def _move_current_by(self, offset: int) -> None:
+        current = self.currentIndex()
+        if not current.isValid():
+            return
+        destination = current.row() + offset
+        if not 0 <= destination < self._queue_model.rowCount():
+            return
+        self._queue_model.move_item(current.row(), destination)
+        self.setCurrentIndex(self._queue_model.index(destination, 0))
 
 
 def _drop_result_message(result: ExternalFileDrop) -> str:
