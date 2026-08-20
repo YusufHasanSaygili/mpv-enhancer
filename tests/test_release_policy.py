@@ -50,6 +50,9 @@ def test_tag_workflow_builds_and_verifies_public_release_assets() -> None:
         "scripts/release_smoke.py",
         "MPV_TEST_EXE",
         "--mpv",
+        "workflow_dispatch",
+        "RELEASE_TAG",
+        "verification-tooling",
     )
     for fragment in required_fragments:
         assert fragment in workflow
@@ -73,6 +76,7 @@ def test_manual_workflow_reverifies_an_immutable_public_release() -> None:
         "scripts/release_smoke.py",
         "MPV_TEST_EXE",
         "--mpv",
+        "verification-tooling",
         "Out-File",
     )
     for fragment in required_fragments:
@@ -115,3 +119,4 @@ def test_release_smoke_covers_the_twenty_file_queue_workflow() -> None:
     )
     for fragment in required_fragments:
         assert fragment in smoke_test
+    assert "play_pause_button.text()" not in smoke_test
