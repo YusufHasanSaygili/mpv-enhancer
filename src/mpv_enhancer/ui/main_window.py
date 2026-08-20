@@ -1,12 +1,13 @@
 """Main application window and first-slice layout placeholders."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -18,6 +19,7 @@ from mpv_enhancer.infrastructure.mpv.discovery import (
 )
 from mpv_enhancer.infrastructure.preferences import MpvPreferenceStore
 from mpv_enhancer.ui.preferences_dialog import PreferencesDialog
+from mpv_enhancer.ui.queue_controller import QueueEditOutcome, QueueUndoController
 from mpv_enhancer.ui.queue_model import QueueListModel
 from mpv_enhancer.ui.queue_view import QueueDropListView
 
@@ -60,6 +62,7 @@ class MainWindow(QMainWindow):
         )
         self.queue_model = QueueListModel()
         self.queue_view = QueueDropListView(self.queue_model)
+        self.queue_controller = QueueUndoController(self.queue_model, self.queue_view)
         self.queue_view.dropMessage.connect(self.statusBar().showMessage)
         selection_summary_label = settings.findChild(
             QLabel,
@@ -72,6 +75,22 @@ class MainWindow(QMainWindow):
         self.queue_view.selectionSummaryChanged.connect(
             self.selection_summary_label.setText
         )
+
+        queue_menu = self.menuBar().addMenu("Queue")
+        remove_action = QAction("Remove Selected", self)
+        remove_action.setShortcut("Delete")
+        remove_action.triggered.connect(self.request_remove_selected)
+        queue_menu.addAction(remove_action)
+        clear_action = QAction("Clear Queue...", self)
+        clear_action.triggered.connect(self.request_clear_queue)
+        queue_menu.addAction(clear_action)
+        queue_menu.addSeparator()
+        undo_action = self.queue_controller.undo_stack.createUndoAction(self)
+        undo_action.setShortcuts(QKeySequence.StandardKey.Undo)
+        queue_menu.addAction(undo_action)
+        redo_action = self.queue_controller.undo_stack.createRedoAction(self)
+        redo_action.setShortcuts(QKeySequence.StandardKey.Redo)
+        queue_menu.addAction(redo_action)
         queue = self._create_region(
             "queueRegion",
             "Queue",
@@ -84,6 +103,40 @@ class MainWindow(QMainWindow):
         layout.addWidget(queue, 3)
         self.setCentralWidget(workspace)
         self.statusBar().showMessage("Ready")
+
+    def request_remove_selected(self) -> None:
+        """Remove selected rows, explicitly confirming current-item removal."""
+        outcome = self.queue_controller.remove_selected()
+        if outcome is QueueEditOutcome.CURRENT_CONFIRMATION_REQUIRED:
+            answer = QMessageBox.question(
+                self,
+                "Remove Current Item",
+                (
+                    "The selection includes the current item. "
+                    "Stop it and remove the selected items?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer is QMessageBox.StandardButton.Yes:
+                outcome = self.queue_controller.remove_selected(stop_current=True)
+        if outcome is QueueEditOutcome.NO_CHANGE:
+            self.statusBar().showMessage("Select queue items to remove.")
+
+    def request_clear_queue(self) -> None:
+        """Clear the queue only after an explicit destructive confirmation."""
+        if not self.queue_model.items:
+            self.statusBar().showMessage("The queue is already empty.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Clear Queue",
+            "Clear all queue items? This also stops the current item.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer is QMessageBox.StandardButton.Yes:
+            self.queue_controller.clear_queue(stop_current=True)
 
     def configure_mpv_preferences(
         self,

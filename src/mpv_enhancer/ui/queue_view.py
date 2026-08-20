@@ -1,5 +1,6 @@
 """Queue view support for external Explorer file drops."""
 
+from collections.abc import Callable
 from uuid import UUID
 
 from PySide6.QtCore import (
@@ -76,6 +77,7 @@ class QueueDropListView(QListView):
         super().__init__(parent)
         self._queue_model = model
         self._insertion_row: int | None = None
+        self._move_handler: Callable[[int, int], None] | None = None
         self.setObjectName("queueList")
         self.setAccessibleName("Playback queue")
         self.setModel(model)
@@ -112,6 +114,33 @@ class QueueDropListView(QListView):
         """Return selected UUIDs in current queue order."""
         rows = sorted(index.row() for index in self.selectionModel().selectedRows())
         return tuple(self._queue_model.items[row].item_id for row in rows)
+
+    def select_item_ids(self, item_ids: tuple[UUID, ...]) -> None:
+        """Replace the selection using stable identities in current row order."""
+        selection_model = self.selectionModel()
+        selection_model.clearSelection()
+        selected_ids = set(item_ids)
+        first_index = QModelIndex()
+        for row, item in enumerate(self._queue_model.items):
+            if item.item_id not in selected_ids:
+                continue
+            index = self._queue_model.index(row, 0)
+            selection_model.select(
+                index,
+                selection_model.SelectionFlag.Select
+                | selection_model.SelectionFlag.Rows,
+            )
+            if not first_index.isValid():
+                first_index = index
+        if first_index.isValid():
+            selection_model.setCurrentIndex(
+                first_index,
+                selection_model.SelectionFlag.NoUpdate,
+            )
+
+    def set_move_handler(self, handler: Callable[[int, int], None]) -> None:
+        """Route queue moves through an undo-aware application command handler."""
+        self._move_handler = handler
 
     @property
     def selection_summary(self) -> str:
@@ -160,15 +189,14 @@ class QueueDropListView(QListView):
             insertion_row = self._insertion_row
             if insertion_row is None:
                 insertion_row = self._insertion_row_at(event.position().toPoint())
-            moved = self._queue_model.dropMimeData(
+            move = self._queue_model.resolve_internal_move(
                 event.mimeData(),
-                Qt.DropAction.MoveAction,
                 insertion_row,
-                0,
                 QModelIndex(),
             )
             self._set_insertion_row(None)
-            if moved:
+            if move is not None:
+                self._perform_move(*move)
                 event.setDropAction(Qt.DropAction.MoveAction)
                 event.accept()
             else:
@@ -253,8 +281,14 @@ class QueueDropListView(QListView):
         destination = current.row() + offset
         if not 0 <= destination < self._queue_model.rowCount():
             return
-        self._queue_model.move_item(current.row(), destination)
+        self._perform_move(current.row(), destination)
         self.setCurrentIndex(self._queue_model.index(destination, 0))
+
+    def _perform_move(self, source_row: int, destination_row: int) -> None:
+        if self._move_handler is None:
+            self._queue_model.move_item(source_row, destination_row)
+        else:
+            self._move_handler(source_row, destination_row)
 
     def _selection_changed(
         self,
