@@ -1,9 +1,11 @@
 """Ordered queue models with stable, path-independent identity."""
 
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID, uuid4
+
+from mpv_enhancer.domain.settings import PlaybackSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +15,7 @@ class QueueItem:
     item_id: UUID
     source_path: Path
     display_title: str
+    overrides: PlaybackSettings = field(default_factory=PlaybackSettings)
 
     def __post_init__(self) -> None:
         source = Path(self.source_path)
@@ -31,6 +34,7 @@ class QueueItem:
         *,
         display_title: str | None = None,
         item_id: UUID | None = None,
+        overrides: PlaybackSettings | None = None,
     ) -> "QueueItem":
         """Create an item without reading or resolving the machine-local path."""
         source = Path(source_path)
@@ -39,20 +43,32 @@ class QueueItem:
             item_id=item_id if item_id is not None else uuid4(),
             source_path=source,
             display_title=title,
+            overrides=PlaybackSettings() if overrides is None else overrides,
         )
 
 
 class Playlist:
     """An ordered collection that allows duplicate paths but not duplicate UUIDs."""
 
-    def __init__(self, items: Iterable[QueueItem] = ()) -> None:
+    def __init__(
+        self,
+        items: Iterable[QueueItem] = (),
+        *,
+        defaults: PlaybackSettings | None = None,
+    ) -> None:
         self._items = list(items)
+        self._defaults = PlaybackSettings() if defaults is None else defaults
         self._require_unique_identities()
 
     @property
     def items(self) -> tuple[QueueItem, ...]:
         """Return an immutable view of the current queue order."""
         return tuple(self._items)
+
+    @property
+    def defaults(self) -> PlaybackSettings:
+        """Return immutable playlist-level defaults shared by queue items."""
+        return self._defaults
 
     def __len__(self) -> int:
         return len(self._items)
