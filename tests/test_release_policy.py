@@ -12,22 +12,23 @@ def _read(relative_path: str) -> str:
     return (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_v02_release_version_is_consistent() -> None:
+def test_v03_release_version_is_consistent() -> None:
     configuration = tomllib.loads(_read("pyproject.toml"))
 
-    assert __version__ == "0.2.0"
+    assert __version__ == "0.3.0"
     assert configuration["project"]["version"] == __version__
 
 
-def test_v02_release_documentation_exists() -> None:
+def test_v03_release_documentation_exists() -> None:
     changelog = _read("CHANGELOG.md")
-    release_notes = _read("docs/releases/v0.2.md")
+    release_notes = _read("docs/releases/v0.3.md")
 
-    assert "## [0.2.0] - 2026-08-20" in changelog
-    assert "S02-T01" in release_notes
-    assert "S02-T08" in release_notes
-    assert "20 mixed media files" in release_notes
-    assert "No media playback" in release_notes
+    assert "## [0.3.0] - 2026-08-20" in changelog
+    assert "S03-T01" in release_notes
+    assert "S03-T09" in release_notes
+    assert "Unicode" in release_notes
+    assert "leading-hyphen" in release_notes
+    assert "embedded mpv playback" in release_notes
 
 
 def test_tag_workflow_builds_and_verifies_public_release_assets() -> None:
@@ -47,6 +48,8 @@ def test_tag_workflow_builds_and_verifies_public_release_assets() -> None:
         "gh release download",
         "Get-FileHash",
         "scripts/release_smoke.py",
+        "MPV_TEST_EXE",
+        "--mpv",
     )
     for fragment in required_fragments:
         assert fragment in workflow
@@ -68,6 +71,8 @@ def test_manual_workflow_reverifies_an_immutable_public_release() -> None:
         "Get-FileHash",
         "--require-hashes",
         "scripts/release_smoke.py",
+        "MPV_TEST_EXE",
+        "--mpv",
         "Out-File",
     )
     for fragment in required_fragments:
@@ -78,13 +83,13 @@ def test_public_tag_matches_the_release_version() -> None:
     script = REPOSITORY_ROOT / "scripts" / "release_version.py"
 
     valid = subprocess.run(
-        [sys.executable, str(script), "v0.2"],
+        [sys.executable, str(script), "v0.3"],
         check=False,
         capture_output=True,
         text=True,
     )
     invalid = subprocess.run(
-        [sys.executable, str(script), "v0.1.1"],
+        [sys.executable, str(script), "v0.2"],
         check=False,
         capture_output=True,
         text=True,
@@ -92,7 +97,7 @@ def test_public_tag_matches_the_release_version() -> None:
 
     assert valid.returncode == 0
     assert invalid.returncode == 1
-    assert "expected 'v0.2'" in invalid.stderr
+    assert "expected 'v0.3'" in invalid.stderr
 
 
 def test_release_smoke_covers_the_twenty_file_queue_workflow() -> None:
@@ -104,6 +109,9 @@ def test_release_smoke_covers_the_twenty_file_queue_workflow() -> None:
         "select_item_ids",
         "move_item",
         "undo_stack.undo",
+        "- snow's 雪.wav",
+        "progress_slider",
+        "--mpv",
     )
     for fragment in required_fragments:
         assert fragment in smoke_test
