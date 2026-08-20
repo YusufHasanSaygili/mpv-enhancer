@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from mpv_enhancer.domain.selection_settings import SettingPatch
-from mpv_enhancer.domain.settings import SettingKey
+from mpv_enhancer.domain.settings import AspectRatio, SettingKey
 
 
 class PresetKey(StrEnum):
@@ -12,7 +12,8 @@ class PresetKey(StrEnum):
 
     DEFAULT = "default"
     PLAYBACK_1_2X = "playback_1_2x"
-    FILL_DISPLAY = "fill_display"
+    FILL_16_9_DISPLAY = "fill_16_9_display"
+    FILL_21_9_DISPLAY = "fill_21_9_display"
     SUBTITLES_ON = "subtitles_on"
     SUBTITLES_OFF = "subtitles_off"
 
@@ -48,6 +49,10 @@ def _patch_preview(patch: SettingPatch) -> str:
         return f"Speed → {patch.value:g}×"
     if patch.key is SettingKey.PANSCAN:
         return f"Pan and Scan → {patch.value:.1f}"
+    if patch.key is SettingKey.ASPECT_RATIO:
+        if not isinstance(patch.value, AspectRatio):
+            raise RuntimeError("An aspect-ratio patch requires a typed value.")
+        return f"Aspect Ratio → {patch.value.display_value}"
     if patch.key is SettingKey.VOLUME:
         return f"Volume → {patch.value:g}%"
     if patch.key is SettingKey.MUTE:
@@ -65,9 +70,20 @@ STARTER_PRESETS = (
         (SettingPatch(SettingKey.SPEED, 1.2),),
     ),
     SettingsPreset(
-        PresetKey.FILL_DISPLAY,
-        "Fill Display",
-        (SettingPatch(SettingKey.PANSCAN, 1.0),),
+        PresetKey.FILL_16_9_DISPLAY,
+        "Fill 16:9 Display",
+        (
+            SettingPatch(SettingKey.ASPECT_RATIO, AspectRatio.parse("16:9")),
+            SettingPatch(SettingKey.PANSCAN, 1.0),
+        ),
+    ),
+    SettingsPreset(
+        PresetKey.FILL_21_9_DISPLAY,
+        "Fill 21:9 Display",
+        (
+            SettingPatch(SettingKey.ASPECT_RATIO, AspectRatio.parse("21:9")),
+            SettingPatch(SettingKey.PANSCAN, 1.0),
+        ),
     ),
     SettingsPreset(
         PresetKey.SUBTITLES_ON,
