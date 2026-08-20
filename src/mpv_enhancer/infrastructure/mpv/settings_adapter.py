@@ -16,6 +16,7 @@ from mpv_enhancer.domain.settings import (
     VideoDimensions,
     VideoRotation,
 )
+from mpv_enhancer.infrastructure.mpv.capabilities import MpvCapabilities
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.tracks import (
     MpvTrack,
@@ -40,17 +41,26 @@ class MpvSettingsAdapter:
     ) -> None:
         self._client = client
         self._registry = registry
+        self._capabilities: MpvCapabilities | None = None
+
+    def set_capabilities(self, capabilities: MpvCapabilities) -> None:
+        """Gate future property writes against one normalized mpv snapshot."""
+        self._capabilities = capabilities
 
     def reset_managed_properties(self) -> None:
         """Restore every managed mpv property to its deterministic reset value."""
         for spec in self._registry.specs:
+            if not self._is_supported(spec.mpv_property):
+                continue
             self._set_property(spec.mpv_property, spec.reset_value)
 
     def apply(self, settings: EffectivePlaybackSettings) -> None:
         """Reset prior state and apply settings not requiring source metadata."""
         self.reset_managed_properties()
         for spec in self._registry.specs:
-            if spec.key is SettingKey.VIDEO_CROP:
+            if spec.key is SettingKey.VIDEO_CROP or not self._is_supported(
+                spec.mpv_property
+            ):
                 continue
             self._set_property(
                 spec.mpv_property,
@@ -64,10 +74,9 @@ class MpvSettingsAdapter:
     ) -> None:
         """Apply a crop only after it fits the decoded source rectangle."""
         validated = crop.validated_for(source)
-        self._set_property(
-            self._registry.require(SettingKey.VIDEO_CROP).mpv_property,
-            validated,
-        )
+        property_name = self._registry.require(SettingKey.VIDEO_CROP).mpv_property
+        if self._is_supported(property_name):
+            self._set_property(property_name, validated)
 
     def apply_resolved_tracks(
         self,
@@ -76,15 +85,20 @@ class MpvSettingsAdapter:
     ) -> TrackAvailability:
         """Apply deterministic IDs after mpv reports the current file's tracks."""
         availability = resolve_track_availability(settings, tracks)
-        self._set_property(
-            self._registry.require(SettingKey.SUBTITLE_TRACK).mpv_property,
-            availability.subtitle.selection,
-        )
-        self._set_property(
-            self._registry.require(SettingKey.AUDIO_TRACK).mpv_property,
-            availability.audio.selection,
-        )
+        subtitle_property = self._registry.require(
+            SettingKey.SUBTITLE_TRACK
+        ).mpv_property
+        audio_property = self._registry.require(SettingKey.AUDIO_TRACK).mpv_property
+        if self._is_supported(subtitle_property):
+            self._set_property(subtitle_property, availability.subtitle.selection)
+        if self._is_supported(audio_property):
+            self._set_property(audio_property, availability.audio.selection)
         return availability
+
+    def _is_supported(self, property_name: str) -> bool:
+        return self._capabilities is None or self._capabilities.supports_property(
+            property_name
+        )
 
     def _set_property(self, name: str, value: SettingValue) -> None:
         self._client.request(("set_property", name, _mpv_value(value)))

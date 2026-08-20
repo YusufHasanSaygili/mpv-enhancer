@@ -8,6 +8,10 @@ from typing import Protocol
 
 from PySide6.QtCore import QObject, Signal
 
+from mpv_enhancer.infrastructure.mpv.capabilities import (
+    MpvCapabilities,
+    MpvCapabilityProbe,
+)
 from mpv_enhancer.infrastructure.mpv.json_ipc import (
     JsonValue,
     MpvIpcCallbacks,
@@ -79,6 +83,8 @@ class EmbeddedMpvSession(QObject):
 
     failureOccurred = Signal(str)
     runtimeRecovered = Signal()
+    capabilitiesAvailable = Signal(object)
+    _capabilityProbeCompleted = Signal(object)
 
     def __init__(
         self,
@@ -119,6 +125,8 @@ class EmbeddedMpvSession(QObject):
             ),
         )
         self._playback_adapter = MpvJsonPlaybackAdapter(self._client)
+        self._capability_probe = MpvCapabilityProbe(self._client)
+        self._capabilityProbeCompleted.connect(self._apply_capabilities)
         self._started = False
 
     @property
@@ -148,6 +156,12 @@ class EmbeddedMpvSession(QObject):
 
     def set_recovered_listener(self, listener: Callable[[], None]) -> None:
         self.runtimeRecovered.connect(listener)
+
+    def set_capabilities_listener(
+        self,
+        listener: Callable[[MpvCapabilities], None],
+    ) -> None:
+        self.capabilitiesAvailable.connect(listener)
 
     def start(self, executable: Path) -> bool:
         """Start the child first, then connect its named-pipe transport."""
@@ -188,6 +202,7 @@ class EmbeddedMpvSession(QObject):
     def _transport_state_changed(self, state: PipeTransportState) -> None:
         self._transport_state = state
         if state is PipeTransportState.CONNECTED:
+            self._start_capability_probe()
             if self._connected_once:
                 self._playback_adapter.reset_runtime()
                 self._start_recovery_probe()
@@ -201,6 +216,24 @@ class EmbeddedMpvSession(QObject):
     def _transport_failed(self, _message: str) -> None:
         self._last_error = "The mpv IPC transport failed."
         self._notify_failure("Playback connection failed. Retry or stop playback.")
+
+    def _start_capability_probe(self) -> None:
+        request = self._capability_probe.probe()
+        request.add_done_callback(self._capability_probe_completed)
+
+    def _capability_probe_completed(
+        self,
+        completed: Future[MpvCapabilities],
+    ) -> None:
+        try:
+            capabilities = completed.result()
+        except Exception:
+            return
+        self._capabilityProbeCompleted.emit(capabilities)
+
+    def _apply_capabilities(self, capabilities: MpvCapabilities) -> None:
+        self._playback_adapter.set_capabilities(capabilities)
+        self.capabilitiesAvailable.emit(capabilities)
 
     def _protocol_failed(self, _message: str) -> None:
         self._last_error = "mpv returned invalid IPC data."

@@ -39,6 +39,7 @@ from mpv_enhancer.domain.settings import (
     VideoDimensions,
     VideoRotation,
 )
+from mpv_enhancer.infrastructure.mpv.capabilities import MpvCapabilities
 from mpv_enhancer.infrastructure.mpv.tracks import (
     MpvTrack,
     MpvTrackType,
@@ -89,6 +90,7 @@ class SelectedItemsSettingsPanel(QWidget):
         self.setObjectName("selectedItemsSettingsPanel")
         self._adapters = {key: MixedValueAdapter(key) for key in SettingKey}
         self._controls: dict[SettingKey, SettingControl] = {}
+        self._editor_rows: dict[SettingKey, QWidget] = {}
         self._state_labels: dict[SettingKey, QLabel] = {}
         self._language_preset_controls: dict[SettingKey, QComboBox] = {}
         self._track_availability: TrackAvailability | None = None
@@ -104,6 +106,14 @@ class SelectedItemsSettingsPanel(QWidget):
         self.selection_summary_label.setAccessibleName("Selection summary")
         self.selection_summary_label.setWordWrap(True)
         layout.addWidget(self.selection_summary_label)
+        self.capability_status_label = QLabel(
+            "Setting support is checked when mpv starts.",
+            self,
+        )
+        self.capability_status_label.setObjectName("capabilityStatusLabel")
+        self.capability_status_label.setAccessibleName("mpv setting support")
+        self.capability_status_label.setWordWrap(True)
+        layout.addWidget(self.capability_status_label)
 
         scroll_area = QScrollArea(self)
         scroll_area.setObjectName("settingsScrollArea")
@@ -521,10 +531,12 @@ class SelectedItemsSettingsPanel(QWidget):
 
     def _editor_row(self, key: SettingKey, control: SettingControl) -> QWidget:
         row = QWidget(self)
+        row.setObjectName(f"{key.value}EditorRow")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(control, 1)
         self._add_state_and_reset_widgets(layout, row, key)
+        self._editor_rows[key] = row
         return row
 
     def _add_state_and_reset_widgets(
@@ -718,6 +730,36 @@ class SelectedItemsSettingsPanel(QWidget):
             if adapter.key in self._controls:
                 self._bind_control(adapter.key, adapter.state)
         self._update_crop_source_label()
+
+    def set_capabilities(self, capabilities: MpvCapabilities | None) -> None:
+        """Gate only setting rows whose exact mpv property is unavailable."""
+        unsupported_count = 0
+        for key, row in self._editor_rows.items():
+            property_name = SETTING_SPEC_REGISTRY.require(key).mpv_property
+            supported = capabilities is None or capabilities.supports_property(
+                property_name
+            )
+            row.setEnabled(supported)
+            if supported:
+                row.setToolTip("")
+            else:
+                if capabilities is None:
+                    raise RuntimeError("Unsupported settings require capabilities.")
+                unsupported_count += 1
+                row.setToolTip(
+                    f"mpv {capabilities.version} does not report the "
+                    f"{property_name} property."
+                )
+        if capabilities is None:
+            message = "Setting support is checked when mpv starts."
+        elif unsupported_count == 0:
+            message = f"mpv {capabilities.version}: all settings are available."
+        else:
+            noun = "setting is" if unsupported_count == 1 else "settings are"
+            message = (
+                f"mpv {capabilities.version}: {unsupported_count} {noun} unavailable."
+            )
+        self.capability_status_label.setText(message)
 
     def set_source_dimensions(
         self,

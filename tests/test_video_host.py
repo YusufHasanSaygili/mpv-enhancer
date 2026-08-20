@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QLabel, QMainWindow
 
 from mpv_enhancer.domain.settings import EffectivePlaybackSettings, VideoDimensions
+from mpv_enhancer.infrastructure.mpv.capabilities import MpvCapabilities
 from mpv_enhancer.infrastructure.mpv.discovery import (
     MpvDiagnostics,
     MpvDiagnosticsStatus,
@@ -67,6 +68,7 @@ class FakePlaybackSession:
         self.playback_adapter = NoopPlaybackAdapter()
         self.failure_listener: Callable[[str], None] | None = None
         self.recovered_listener: Callable[[], None] | None = None
+        self.capabilities_listener: Callable[[MpvCapabilities], None] | None = None
 
     def start(self, executable: Path) -> bool:
         self.started_with.append(executable)
@@ -81,6 +83,12 @@ class FakePlaybackSession:
 
     def set_recovered_listener(self, listener: Callable[[], None]) -> None:
         self.recovered_listener = listener
+
+    def set_capabilities_listener(
+        self,
+        listener: Callable[[MpvCapabilities], None],
+    ) -> None:
+        self.capabilities_listener = listener
 
     def emit_failure(self, message: str) -> None:
         assert self.failure_listener is not None
