@@ -10,16 +10,21 @@ from typing import Protocol
 
 from PySide6.QtCore import QObject, Signal
 
-from mpv_enhancer.domain.settings import EffectivePlaybackSettings
+from mpv_enhancer.domain.settings import EffectivePlaybackSettings, VideoDimensions
 from mpv_enhancer.infrastructure.mpv.json_ipc import (
     JsonValue,
     MpvIpcEvent,
     MpvIpcRequest,
 )
-from mpv_enhancer.infrastructure.mpv.settings_adapter import MpvSettingsAdapter
+from mpv_enhancer.infrastructure.mpv.settings_adapter import (
+    MpvSettingsAdapter,
+    normalize_video_dimensions,
+)
 from mpv_enhancer.infrastructure.mpv.tracks import normalize_mpv_track_list
 
-PlaybackPropertyListener = Callable[[str, JsonValue], None]
+type PlaybackPropertyValue = JsonValue | VideoDimensions
+PlaybackPropertyListener = Callable[[str, PlaybackPropertyValue], None]
+JsonIpcPropertyListener = Callable[[str, JsonValue], None]
 
 
 class PlaybackEventType(StrEnum):
@@ -59,7 +64,7 @@ class JsonIpcClient(Protocol):
     def observe_property(
         self,
         name: str,
-        listener: PlaybackPropertyListener,
+        listener: JsonIpcPropertyListener,
     ) -> object: ...
 
 
@@ -74,7 +79,11 @@ class PlaybackAdapter(Protocol):
 
     def load_file(self, path: Path, generation: int) -> None: ...
 
-    def apply_settings(self, settings: EffectivePlaybackSettings) -> None: ...
+    def apply_settings(
+        self,
+        settings: EffectivePlaybackSettings,
+        source_dimensions: VideoDimensions | None = None,
+    ) -> None: ...
 
     def set_paused(self, paused: bool) -> None: ...
 
@@ -143,10 +152,22 @@ class MpvJsonPlaybackAdapter(QObject):
                 self._active_generation = None
             raise
 
-    def apply_settings(self, settings: EffectivePlaybackSettings) -> None:
-        """Reset and apply the complete allowlisted settings value."""
+    def apply_settings(
+        self,
+        settings: EffectivePlaybackSettings,
+        source_dimensions: VideoDimensions | None = None,
+    ) -> None:
+        """Apply safe settings, deferring crop until source dimensions are known."""
         self._active_settings = settings
         self._settings_adapter.apply(settings)
+        if source_dimensions is not None:
+            try:
+                self._settings_adapter.apply_validated_crop(
+                    settings.video_crop,
+                    source_dimensions,
+                )
+            except ValueError as error:
+                self.propertyChanged.emit("video-crop-error", str(error))
 
     def set_paused(self, paused: bool) -> None:
         self._client.request(("set_property", "pause", paused))
@@ -182,6 +203,7 @@ class MpvJsonPlaybackAdapter(QObject):
         if event.name == "file-loaded":
             _discard_entry(self._loading_entries, entry_id)
             self._read_loaded_tracks(generation)
+            self._read_loaded_video_dimensions(generation)
             self.playbackEvent.emit(
                 PlaybackEvent(PlaybackEventType.FILE_LOADED, generation)
             )
@@ -209,6 +231,17 @@ class MpvJsonPlaybackAdapter(QObject):
             lambda completed: self._loaded_tracks_received(generation, completed)
         )
 
+    def _read_loaded_video_dimensions(self, generation: int) -> None:
+        if generation != self._active_generation or self._active_settings is None:
+            return
+        request = self._client.request(("get_property", "video-dec-params"))
+        request.future.add_done_callback(
+            lambda completed: self._loaded_video_dimensions_received(
+                generation,
+                completed,
+            )
+        )
+
     def _loaded_tracks_received(
         self,
         generation: int,
@@ -228,6 +261,34 @@ class MpvJsonPlaybackAdapter(QObject):
             normalize_mpv_track_list(value),
         )
         self.propertyChanged.emit("track-list", value)
+
+    def _loaded_video_dimensions_received(
+        self,
+        generation: int,
+        completed: Future[JsonValue],
+    ) -> None:
+        if generation != self._active_generation or completed.cancelled():
+            return
+        try:
+            value = completed.result()
+        except Exception:
+            return
+        dimensions = normalize_video_dimensions(value)
+        settings = self._active_settings
+        if (
+            dimensions is None
+            or settings is None
+            or generation != self._active_generation
+        ):
+            return
+        self.propertyChanged.emit("video-dimensions", dimensions)
+        try:
+            self._settings_adapter.apply_validated_crop(
+                settings.video_crop,
+                dimensions,
+            )
+        except ValueError as error:
+            self.propertyChanged.emit("video-crop-error", str(error))
 
     def _next_loading_entry(self) -> int | None:
         while self._loading_entries:

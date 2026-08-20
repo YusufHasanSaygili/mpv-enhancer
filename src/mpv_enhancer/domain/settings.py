@@ -15,6 +15,9 @@ _LANGUAGE_TAG_PATTERN = re.compile(
 _ASPECT_RATIO_PATTERN = re.compile(
     r"\s*(\d+(?:\.\d*)?|\.\d+)\s*:\s*(\d+(?:\.\d*)?|\.\d+)\s*"
 )
+_VIDEO_CROP_PATTERN = re.compile(
+    r"\s*(\d+)\s*[xX]\s*(\d+)(?:\s*\+\s*(\d+)\s*\+\s*(\d+))?\s*"
+)
 _COMMON_ASPECT_RATIOS = ("16:9", "21:9", "4:3")
 
 
@@ -208,12 +211,134 @@ def _normalize_aspect_ratio(text: str) -> str:
     return ":".join(components)
 
 
+@dataclass(frozen=True, slots=True)
+class VideoDimensions:
+    """Positive decoded source dimensions used to validate video crops."""
+
+    width: int
+    height: int
+
+    def __post_init__(self) -> None:
+        for name, value in (("width", self.width), ("height", self.height)):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"Video source {name} must be a positive integer.")
+
+
+class VideoCropMode(StrEnum):
+    """Safe disabled, centered, and explicitly positioned crop modes."""
+
+    OFF = "off"
+    CENTERED = "centered"
+    CUSTOM = "custom"
+
+
+@dataclass(frozen=True, slots=True)
+class VideoCrop:
+    """A structurally valid crop that still requires source-bound validation."""
+
+    mode: VideoCropMode
+    width: int | None = None
+    height: int | None = None
+    x: int | None = None
+    y: int | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.mode, VideoCropMode):
+            raise ValueError("A video crop requires a valid mode.")
+        if self.mode is VideoCropMode.OFF:
+            if any(
+                value is not None for value in (self.width, self.height, self.x, self.y)
+            ):
+                raise ValueError("An off video crop cannot contain a rectangle.")
+            return
+        for name, value in (("width", self.width), ("height", self.height)):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"Video crop {name} must be a positive integer.")
+        if self.mode is VideoCropMode.CENTERED:
+            if self.x is not None or self.y is not None:
+                raise ValueError("A centered video crop cannot contain offsets.")
+            return
+        for name, value in (("x", self.x), ("y", self.y)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"Video crop {name} must be a non-negative integer.")
+
+    @classmethod
+    def off(cls) -> "VideoCrop":
+        """Disable manual cropping and restore source crop metadata."""
+        return cls(VideoCropMode.OFF)
+
+    @classmethod
+    def parse(cls, text: str) -> "VideoCrop":
+        """Parse ``off``, centered ``WxH``, or custom ``WxH+X+Y`` syntax."""
+        if not isinstance(text, str):
+            raise ValueError("A video crop must be text.")
+        if text.strip().casefold() == "off":
+            return cls.off()
+        if len(text) > 64:
+            raise ValueError("Invalid video crop; use off, WxH, or WxH+X+Y.")
+        match = _VIDEO_CROP_PATTERN.fullmatch(text)
+        if match is None:
+            raise ValueError("Invalid video crop; use off, WxH, or WxH+X+Y.")
+        width, height, x, y = (
+            int(component) if component is not None else None
+            for component in match.groups()
+        )
+        if x is None and y is None:
+            return cls(VideoCropMode.CENTERED, width, height)
+        return cls(VideoCropMode.CUSTOM, width, height, x, y)
+
+    @property
+    def display_value(self) -> str:
+        """Return normalized editor text."""
+        return "Off" if self.mode is VideoCropMode.OFF else self._rectangle_text()
+
+    def to_mpv_value(self) -> str:
+        """Return only reviewed mpv ``video-crop`` syntax."""
+        return "" if self.mode is VideoCropMode.OFF else self._rectangle_text()
+
+    def validated_for(self, source: VideoDimensions) -> "VideoCrop":
+        """Reject any rectangle extending beyond decoded source dimensions."""
+        if not isinstance(source, VideoDimensions):
+            raise ValueError("Video crop validation requires source dimensions.")
+        if self.mode is VideoCropMode.OFF:
+            return self
+        width, height = self._require_size()
+        x = 0 if self.x is None else self.x
+        y = 0 if self.y is None else self.y
+        if width > source.width or height > source.height:
+            raise ValueError(
+                f"Video crop is outside the {source.width}x{source.height} source."
+            )
+        if self.mode is VideoCropMode.CUSTOM and (
+            x + width > source.width or y + height > source.height
+        ):
+            raise ValueError(
+                f"Video crop is outside the {source.width}x{source.height} source."
+            )
+        return self
+
+    def _rectangle_text(self) -> str:
+        width, height = self._require_size()
+        rectangle = f"{width}x{height}"
+        if self.mode is VideoCropMode.CUSTOM:
+            if self.x is None or self.y is None:
+                raise RuntimeError("A custom video crop has incomplete offsets.")
+            rectangle += f"+{self.x}+{self.y}"
+        return rectangle
+
+    def _require_size(self) -> tuple[int, int]:
+        if self.width is None or self.height is None:
+            raise RuntimeError("An active video crop has incomplete dimensions.")
+        return self.width, self.height
+
+
 class SettingKey(StrEnum):
     """Stable application keys for reviewed per-item settings."""
 
     SPEED = "speed"
     PANSCAN = "panscan"
     ASPECT_RATIO = "aspect_ratio"
+    VIDEO_CROP = "video_crop"
     VOLUME = "volume"
     MUTE = "mute"
     SUBTITLE_VISIBILITY = "subtitle_visibility"
@@ -233,9 +358,12 @@ class SettingValueType(StrEnum):
     LANGUAGE_PREFERENCES = "language_preferences"
     TRACK_SELECTION = "track_selection"
     ASPECT_RATIO = "aspect_ratio"
+    VIDEO_CROP = "video_crop"
 
 
-type SettingValue = float | bool | LanguagePreferences | TrackSelection | AspectRatio
+type SettingValue = (
+    float | bool | LanguagePreferences | TrackSelection | AspectRatio | VideoCrop
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +418,10 @@ class SettingSpec:
         if self.value_type is SettingValueType.ASPECT_RATIO:
             if not isinstance(value, AspectRatio):
                 raise ValueError(f"{self.key.value} requires a typed aspect ratio.")
+            return value
+        if self.value_type is SettingValueType.VIDEO_CROP:
+            if not isinstance(value, VideoCrop):
+                raise ValueError(f"{self.key.value} requires a typed video crop.")
             return value
 
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -370,6 +502,15 @@ SETTING_SPEC_REGISTRY = SettingSpecRegistry(
             minimum=None,
             maximum=None,
             reset_value=AspectRatio.auto(),
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.VIDEO_CROP,
+            mpv_property="video-crop",
+            value_type=SettingValueType.VIDEO_CROP,
+            minimum=None,
+            maximum=None,
+            reset_value=VideoCrop.off(),
             apply_live=True,
         ),
         SettingSpec(
@@ -464,6 +605,7 @@ class PlaybackSettings:
     speed: float | None = None
     panscan: float | None = None
     aspect_ratio: AspectRatio | None = None
+    video_crop: VideoCrop | None = None
     volume: float | None = None
     mute: bool | None = None
     subtitle_visibility: bool | None = None
@@ -491,7 +633,14 @@ class PlaybackSettings:
             value
             if isinstance(
                 value,
-                (bool, float, LanguagePreferences, TrackSelection, AspectRatio),
+                (
+                    bool,
+                    float,
+                    LanguagePreferences,
+                    TrackSelection,
+                    AspectRatio,
+                    VideoCrop,
+                ),
             )
             else None
         )
@@ -505,6 +654,8 @@ class PlaybackSettings:
             return replace(self, panscan=_require_number(key, normalized))
         if key is SettingKey.ASPECT_RATIO:
             return replace(self, aspect_ratio=_require_aspect_ratio(key, normalized))
+        if key is SettingKey.VIDEO_CROP:
+            return replace(self, video_crop=_require_video_crop(key, normalized))
         if key is SettingKey.VOLUME:
             return replace(self, volume=_require_number(key, normalized))
         if key is SettingKey.MUTE:
@@ -546,6 +697,8 @@ class PlaybackSettings:
             return replace(self, panscan=None)
         if key is SettingKey.ASPECT_RATIO:
             return replace(self, aspect_ratio=None)
+        if key is SettingKey.VIDEO_CROP:
+            return replace(self, video_crop=None)
         if key is SettingKey.VOLUME:
             return replace(self, volume=None)
         if key is SettingKey.MUTE:
@@ -575,6 +728,7 @@ class EffectivePlaybackSettings:
     mute: bool
     subtitle_visibility: bool
     aspect_ratio: AspectRatio = AspectRatio.auto()
+    video_crop: VideoCrop = VideoCrop.off()
     subtitle_languages: LanguagePreferences = LanguagePreferences(())
     audio_languages: LanguagePreferences = LanguagePreferences(())
     subtitle_track: TrackSelection = TrackSelection.auto()
@@ -592,7 +746,14 @@ class EffectivePlaybackSettings:
         value = getattr(self, key.value)
         if isinstance(
             value,
-            (bool, float, LanguagePreferences, TrackSelection, AspectRatio),
+            (
+                bool,
+                float,
+                LanguagePreferences,
+                TrackSelection,
+                AspectRatio,
+                VideoCrop,
+            ),
         ):
             return value
         raise RuntimeError(f"{key.value} resolved to an unsupported value type.")
@@ -634,6 +795,12 @@ def _require_aspect_ratio(key: SettingKey, value: SettingValue) -> AspectRatio:
     return value
 
 
+def _require_video_crop(key: SettingKey, value: SettingValue) -> VideoCrop:
+    if not isinstance(value, VideoCrop):
+        raise RuntimeError(f"{key.value} metadata is not a video crop.")
+    return value
+
+
 def _reset_number(key: SettingKey) -> float:
     return _require_number(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
 
@@ -660,11 +827,16 @@ def _reset_aspect_ratio(key: SettingKey) -> AspectRatio:
     return _require_aspect_ratio(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
 
 
+def _reset_video_crop(key: SettingKey) -> VideoCrop:
+    return _require_video_crop(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
+
+
 EMPTY_PLAYBACK_SETTINGS = PlaybackSettings()
 DETERMINISTIC_BASELINE = PlaybackSettings(
     speed=_reset_number(SettingKey.SPEED),
     panscan=_reset_number(SettingKey.PANSCAN),
     aspect_ratio=_reset_aspect_ratio(SettingKey.ASPECT_RATIO),
+    video_crop=_reset_video_crop(SettingKey.VIDEO_CROP),
     volume=_reset_number(SettingKey.VOLUME),
     mute=_reset_boolean(SettingKey.MUTE),
     subtitle_visibility=_reset_boolean(SettingKey.SUBTITLE_VISIBILITY),
@@ -697,6 +869,7 @@ class EffectiveSettingsResolver:
             speed=self._resolve_number(SettingKey.SPEED, layers),
             panscan=self._resolve_number(SettingKey.PANSCAN, layers),
             aspect_ratio=self._resolve_aspect_ratio(SettingKey.ASPECT_RATIO, layers),
+            video_crop=self._resolve_video_crop(SettingKey.VIDEO_CROP, layers),
             volume=self._resolve_number(SettingKey.VOLUME, layers),
             mute=self._resolve_boolean(SettingKey.MUTE, layers),
             subtitle_visibility=self._resolve_boolean(
@@ -770,6 +943,16 @@ class EffectiveSettingsResolver:
     ) -> AspectRatio:
         value = self._resolve_value(key, layers)
         if not isinstance(value, AspectRatio):
+            raise RuntimeError(f"{key.value} resolved to the wrong value type.")
+        return value
+
+    def _resolve_video_crop(
+        self,
+        key: SettingKey,
+        layers: tuple[PlaybackSettings, ...],
+    ) -> VideoCrop:
+        value = self._resolve_value(key, layers)
+        if not isinstance(value, VideoCrop):
             raise RuntimeError(f"{key.value} resolved to the wrong value type.")
         return value
 

@@ -14,6 +14,7 @@ from mpv_enhancer.domain.settings import (
     SettingKey,
     SettingValue,
     TrackSelection,
+    VideoCrop,
 )
 
 _PRECEDENCE_VALUES: dict[
@@ -27,6 +28,12 @@ _PRECEDENCE_VALUES: dict[
         AspectRatio.parse("16:9"),
         AspectRatio.parse("4:3"),
         AspectRatio.parse("2.39:1"),
+    ),
+    SettingKey.VIDEO_CROP: (
+        VideoCrop.off(),
+        VideoCrop.parse("1920x800"),
+        VideoCrop.parse("1280x720+100+50"),
+        VideoCrop.parse("640x480"),
     ),
     SettingKey.VOLUME: (100.0, 90.0, 80.0, 70.0),
     SettingKey.MUTE: (False, True, False, True),
@@ -145,6 +152,7 @@ def test_deterministic_baseline_contains_every_core_reset_value() -> None:
         speed=1.0,
         panscan=0.0,
         aspect_ratio=AspectRatio.auto(),
+        video_crop=VideoCrop.off(),
         volume=100.0,
         mute=False,
         subtitle_visibility=True,

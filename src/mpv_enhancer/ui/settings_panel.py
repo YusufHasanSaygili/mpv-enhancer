@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from functools import partial
+from uuid import UUID
 
 from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import (
@@ -34,6 +35,8 @@ from mpv_enhancer.domain.settings import (
     SettingKey,
     TrackSelection,
     TrackSelectionMode,
+    VideoCrop,
+    VideoDimensions,
 )
 from mpv_enhancer.infrastructure.mpv.tracks import (
     MpvTrack,
@@ -87,6 +90,8 @@ class SelectedItemsSettingsPanel(QWidget):
         self._state_labels: dict[SettingKey, QLabel] = {}
         self._language_preset_controls: dict[SettingKey, QComboBox] = {}
         self._track_availability: TrackAvailability | None = None
+        self._selected_items: tuple[QueueItem, ...] = ()
+        self._source_dimensions: dict[UUID, VideoDimensions] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -250,6 +255,7 @@ class SelectedItemsSettingsPanel(QWidget):
             step=0.05,
         )
         self._add_aspect_ratio_setting(video_layout)
+        self._add_video_crop_setting(video_layout)
         content_layout.addWidget(preset_group)
         content_layout.addWidget(playback_group)
         content_layout.addWidget(track_group)
@@ -364,6 +370,35 @@ class SelectedItemsSettingsPanel(QWidget):
         )
         layout.addRow("Aspect Ratio", self._editor_row(key, control))
         self._controls[key] = control
+
+    def _add_video_crop_setting(self, layout: QFormLayout) -> None:
+        key = SettingKey.VIDEO_CROP
+        control = QComboBox(self)
+        control.setObjectName("cropControl")
+        control.setAccessibleName("Video Crop")
+        control.setToolTip(
+            "Use Off, enter centered WxH, or enter a custom WxH+X+Y rectangle. "
+            "Every selected source must be inspected before a crop can be applied."
+        )
+        control.setEditable(True)
+        control.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        control.addItem("Inherited", None)
+        control.addItem("Off", VideoCrop.off())
+        control.addItem("Centered", "centered")
+        control.addItem("Custom", "custom")
+        control.addItem("Mixed", "mixed")
+        control.currentIndexChanged.connect(partial(self._crop_index_changed, key))
+        line_edit = control.lineEdit()
+        if line_edit is None:
+            raise RuntimeError("An editable crop control requires a line edit.")
+        line_edit.editingFinished.connect(partial(self._crop_edit_finished, key))
+        layout.addRow("Crop", self._editor_row(key, control))
+        self._controls[key] = control
+        source_label = QLabel("Play every selected item to inspect source dimensions.")
+        source_label.setObjectName("cropSourceDimensionsLabel")
+        source_label.setAccessibleName("Crop source dimensions")
+        source_label.setWordWrap(True)
+        layout.addRow(source_label)
 
     def _add_track_setting(
         self,
@@ -487,6 +522,42 @@ class SelectedItemsSettingsPanel(QWidget):
         control.setEditText(ratio.display_value)
         self.patchRequested.emit(SettingPatch(key, ratio))
 
+    def _crop_index_changed(self, key: SettingKey, index: int) -> None:
+        if index < 0:
+            return
+        control = self._controls[key]
+        if not isinstance(control, QComboBox):
+            raise RuntimeError(f"{key.value} is not a crop editor.")
+        value = control.itemData(index)
+        if value is None:
+            self.resetSettingRequested.emit(key)
+        elif isinstance(value, VideoCrop):
+            self.patchRequested.emit(SettingPatch(key, value))
+        elif value in {"centered", "custom"}:
+            control.setEditText("")
+
+    def _crop_edit_finished(self, key: SettingKey) -> None:
+        control = self._controls[key]
+        if not isinstance(control, QComboBox):
+            raise RuntimeError(f"{key.value} is not a crop editor.")
+        current_index = control.currentIndex()
+        if current_index >= 0 and control.currentText() == control.itemText(
+            current_index
+        ):
+            return
+        try:
+            crop = VideoCrop.parse(control.currentText())
+            for item in self._selected_items:
+                source = self._source_dimensions.get(item.item_id)
+                if source is None:
+                    raise ValueError("Source dimensions are unavailable.")
+                crop.validated_for(source)
+        except ValueError:
+            self._state_labels[key].setText("Invalid")
+            return
+        control.setEditText(crop.display_value)
+        self.patchRequested.emit(SettingPatch(key, crop))
+
     def _language_preset_changed(self, key: SettingKey, index: int) -> None:
         if index == 0:
             return
@@ -528,6 +599,7 @@ class SelectedItemsSettingsPanel(QWidget):
 
     def set_selected_items(self, selected_items: tuple[QueueItem, ...]) -> None:
         """Bind summary, enabled state, and mixed adapters to one selection."""
+        self._selected_items = selected_items
         count = len(selected_items)
         if count == 0:
             summary = "No queue items selected"
@@ -544,6 +616,31 @@ class SelectedItemsSettingsPanel(QWidget):
             adapter.bind(selected_items)
             if adapter.key in self._controls:
                 self._bind_control(adapter.key, adapter.state)
+        self._update_crop_source_label()
+
+    def set_source_dimensions(
+        self,
+        item_id: UUID,
+        dimensions: VideoDimensions | None,
+    ) -> None:
+        """Record decoded dimensions for safe selected-item crop validation."""
+        if dimensions is None:
+            self._source_dimensions.pop(item_id, None)
+        else:
+            self._source_dimensions[item_id] = dimensions
+        self._update_crop_source_label()
+
+    def clear_source_dimensions(self) -> None:
+        """Discard runtime-only decoded dimensions when playback shuts down."""
+        self._source_dimensions.clear()
+        self._update_crop_source_label()
+
+    def show_crop_validation_error(self, message: str) -> None:
+        """Present a non-fatal decoded-source crop rejection."""
+        self._state_labels[SettingKey.VIDEO_CROP].setText("Invalid")
+        label = self.findChild(QLabel, "cropSourceDimensionsLabel")
+        if label is not None:
+            label.setText(message)
 
     def set_track_availability(
         self,
@@ -584,6 +681,8 @@ class SelectedItemsSettingsPanel(QWidget):
             self._populate_track_control(key, state)
         elif isinstance(control, QComboBox) and key is SettingKey.ASPECT_RATIO:
             self._bind_aspect_ratio_control(control, state)
+        elif isinstance(control, QComboBox) and key is SettingKey.VIDEO_CROP:
+            self._bind_crop_control(control, state)
         elif isinstance(control, QComboBox):
             if state.state is SelectedSettingState.INHERITED:
                 control.setCurrentIndex(0)
@@ -629,6 +728,50 @@ class SelectedItemsSettingsPanel(QWidget):
         control.setCurrentIndex(matching_index)
         if matching_index < 0:
             control.setEditText(value.display_value)
+
+    @staticmethod
+    def _bind_crop_control(
+        control: QComboBox,
+        state: SelectedSettingValue,
+    ) -> None:
+        if state.state is SelectedSettingState.INHERITED:
+            control.setCurrentIndex(0)
+            return
+        if state.state is SelectedSettingState.MIXED:
+            control.setCurrentIndex(control.count() - 1)
+            return
+        value = state.value
+        if not isinstance(value, VideoCrop):
+            raise RuntimeError("video_crop resolved to the wrong control type.")
+        matching_index = next(
+            (
+                index
+                for index in range(control.count())
+                if control.itemData(index) == value
+            ),
+            -1,
+        )
+        control.setCurrentIndex(matching_index)
+        if matching_index < 0:
+            control.setEditText(value.display_value)
+
+    def _update_crop_source_label(self) -> None:
+        label = self.findChild(QLabel, "cropSourceDimensionsLabel")
+        if label is None:
+            return
+        dimensions = tuple(
+            self._source_dimensions.get(item.item_id) for item in self._selected_items
+        )
+        if not dimensions or any(value is None for value in dimensions):
+            label.setText("Play every selected item to inspect source dimensions.")
+            return
+        known = tuple(value for value in dimensions if value is not None)
+        unique = {(value.width, value.height) for value in known}
+        if len(unique) == 1:
+            width, height = next(iter(unique))
+            label.setText(f"Selected source dimensions: {width}×{height}.")
+        else:
+            label.setText("Selected items have different inspected source dimensions.")
 
     def _populate_track_control(
         self,

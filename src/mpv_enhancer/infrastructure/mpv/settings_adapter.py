@@ -12,6 +12,8 @@ from mpv_enhancer.domain.settings import (
     SettingSpecRegistry,
     SettingValue,
     TrackSelection,
+    VideoCrop,
+    VideoDimensions,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.tracks import (
@@ -44,13 +46,27 @@ class MpvSettingsAdapter:
             self._set_property(spec.mpv_property, spec.reset_value)
 
     def apply(self, settings: EffectivePlaybackSettings) -> None:
-        """Reset prior state, then apply one complete effective settings value."""
+        """Reset prior state and apply settings not requiring source metadata."""
         self.reset_managed_properties()
         for spec in self._registry.specs:
+            if spec.key is SettingKey.VIDEO_CROP:
+                continue
             self._set_property(
                 spec.mpv_property,
                 _effective_value(settings, spec.key),
             )
+
+    def apply_validated_crop(
+        self,
+        crop: VideoCrop,
+        source: VideoDimensions,
+    ) -> None:
+        """Apply a crop only after it fits the decoded source rectangle."""
+        validated = crop.validated_for(source)
+        self._set_property(
+            self._registry.require(SettingKey.VIDEO_CROP).mpv_property,
+            validated,
+        )
 
     def apply_resolved_tracks(
         self,
@@ -81,6 +97,8 @@ def _effective_value(
 
 
 def _mpv_value(value: SettingValue) -> JsonValue:
+    if isinstance(value, VideoCrop):
+        return value.to_mpv_value()
     if isinstance(value, AspectRatio):
         return value.to_mpv_value()
     if isinstance(value, LanguagePreferences):
@@ -88,3 +106,22 @@ def _mpv_value(value: SettingValue) -> JsonValue:
     if isinstance(value, TrackSelection):
         return value.to_mpv_value()
     return value
+
+
+def normalize_video_dimensions(value: JsonValue) -> VideoDimensions | None:
+    """Normalize decoded mpv source dimensions without leaking raw JSON."""
+    if not isinstance(value, dict):
+        return None
+    width = value.get("w")
+    height = value.get("h")
+    if (
+        isinstance(width, bool)
+        or not isinstance(width, int)
+        or isinstance(height, bool)
+        or not isinstance(height, int)
+    ):
+        return None
+    try:
+        return VideoDimensions(width, height)
+    except ValueError:
+        return None

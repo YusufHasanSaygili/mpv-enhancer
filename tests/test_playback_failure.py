@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QPushButton
 
 from mpv_enhancer.domain.models import Playlist, QueueItem
-from mpv_enhancer.domain.settings import EffectivePlaybackSettings
+from mpv_enhancer.domain.settings import EffectivePlaybackSettings, VideoDimensions
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.playback import (
     PlaybackEndKind,
@@ -33,7 +33,11 @@ class FailingPlaybackAdapter:
     def load_file(self, path: Path, generation: int) -> None:
         self.loaded.append((path, generation))
 
-    def apply_settings(self, _settings: EffectivePlaybackSettings) -> None:
+    def apply_settings(
+        self,
+        _settings: EffectivePlaybackSettings,
+        _source_dimensions: VideoDimensions | None = None,
+    ) -> None:
         pass
 
     def set_paused(self, _paused: bool) -> None:

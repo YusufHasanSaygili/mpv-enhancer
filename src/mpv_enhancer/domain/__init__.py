@@ -32,6 +32,9 @@ from mpv_enhancer.domain.settings import (
     SettingValueType,
     TrackSelection,
     TrackSelectionMode,
+    VideoCrop,
+    VideoCropMode,
+    VideoDimensions,
 )
 from mpv_enhancer.domain.validation import (
     DEFAULT_SUPPORTED_MEDIA_EXTENSIONS,
@@ -67,6 +70,9 @@ __all__ = [
     "STARTER_PRESETS",
     "TrackSelection",
     "TrackSelectionMode",
+    "VideoCrop",
+    "VideoCropMode",
+    "VideoDimensions",
     "SupportedExtensionPolicy",
     "apply_selection_patch",
     "inspect_selected_setting",
