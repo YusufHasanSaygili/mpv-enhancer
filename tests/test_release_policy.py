@@ -116,6 +116,9 @@ def test_release_smoke_covers_queue_settings_and_playback_workflows() -> None:
         '"panscanControl"',
         "SelectedSettingState.MIXED",
         "_verify_no_leak_playback_settings",
+        "_verify_multilingual_track_selection",
+        'LanguagePreferences.parse("tr,tur,en")',
+        'LanguagePreferences.parse("es,spa,en")',
         "move_item",
         "undo_stack.undo",
         "- snow's 雪.wav",
@@ -125,3 +128,16 @@ def test_release_smoke_covers_queue_settings_and_playback_workflows() -> None:
     for fragment in required_fragments:
         assert fragment in smoke_test
     assert "play_pause_button.text()" not in smoke_test
+
+
+def test_multilingual_fixture_generator_is_synthetic_and_shell_free() -> None:
+    generator = _read("scripts/generate_multilingual_fixtures.py")
+
+    for fragment in (
+        'FixtureSpec("episode-06.mkv", ("eng", "tur"))',
+        'FixtureSpec("episode-07.mkv", ("eng", "spa"))',
+        '"color=c=black:s=320x180:r=24:d=2"',
+        '"language=eng"',
+        "subprocess.run(command, check=True, shell=False)",
+    ):
+        assert fragment in generator
