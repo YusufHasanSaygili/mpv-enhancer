@@ -257,6 +257,18 @@ class SelectedItemsSettingsPanel(QWidget):
 
         video_group = _settings_group("Video", "videoSettingsGroup")
         video_layout = QFormLayout(video_group)
+        panscan_conflict_help = QLabel(
+            (
+                "Pan and Scan requires scaled video. If mpv's video-unscaled mode "
+                "is active, mpv ignores Pan and Scan; disable video-unscaled "
+                "before using a fill preset."
+            ),
+            video_group,
+        )
+        panscan_conflict_help.setObjectName("panscanUnscaledConflictLabel")
+        panscan_conflict_help.setAccessibleName("Pan and Scan conflict explanation")
+        panscan_conflict_help.setWordWrap(True)
+        video_layout.addRow(panscan_conflict_help)
         self._add_numeric_setting(
             video_layout,
             SettingKey.PANSCAN,
