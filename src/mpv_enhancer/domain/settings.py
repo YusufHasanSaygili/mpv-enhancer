@@ -1,20 +1,131 @@
 """Typed allowlist metadata for settings that MPV Enhancer may manage."""
 
 import math
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from types import MappingProxyType
 
+_LANGUAGE_TAG_PATTERN = re.compile(
+    r"[a-z]{2,8}(?:-[a-z0-9]{1,8})*",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class LanguagePreferences:
+    """Ordered, deduplicated IETF/ISO language fallback tags."""
+
+    tags: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_tag in self.tags:
+            if not isinstance(raw_tag, str):
+                raise ValueError("Each language tag must be text.")
+            tag = raw_tag.strip().lower()
+            if not tag:
+                continue
+            if _LANGUAGE_TAG_PATTERN.fullmatch(tag) is None:
+                raise ValueError(f"Invalid language tag: {raw_tag!r}.")
+            if tag not in seen:
+                normalized.append(tag)
+                seen.add(tag)
+        object.__setattr__(self, "tags", tuple(normalized))
+
+    @classmethod
+    def parse(cls, text: str) -> "LanguagePreferences":
+        """Parse a comma-separated fallback list while preserving first order."""
+        if not isinstance(text, str):
+            raise ValueError("Language preferences must be text.")
+        return cls(tuple(text.split(",")))
+
+    def to_mpv_value(self) -> str:
+        """Return mpv's comma-separated language preference syntax."""
+        return ",".join(self.tags)
+
+
+class TrackSelectionMode(StrEnum):
+    """Safe track-selection modes accepted by the application model."""
+
+    AUTO = "auto"
+    OFF = "off"
+    SPECIFIC = "specific"
+
+
+@dataclass(frozen=True, slots=True)
+class TrackSelection:
+    """An automatic, disabled, or positive explicit mpv track identity."""
+
+    mode: TrackSelectionMode
+    track_id: int | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.mode, TrackSelectionMode):
+            raise ValueError("A track selection requires a valid mode.")
+        if self.mode is TrackSelectionMode.SPECIFIC:
+            if (
+                isinstance(self.track_id, bool)
+                or not isinstance(self.track_id, int)
+                or self.track_id <= 0
+            ):
+                raise ValueError("A specific track selection requires a positive ID.")
+        elif self.track_id is not None:
+            raise ValueError("Only a specific track selection may contain an ID.")
+
+    @classmethod
+    def auto(cls) -> "TrackSelection":
+        return cls(TrackSelectionMode.AUTO)
+
+    @classmethod
+    def off(cls) -> "TrackSelection":
+        return cls(TrackSelectionMode.OFF)
+
+    @classmethod
+    def specific(cls, track_id: int) -> "TrackSelection":
+        return cls(TrackSelectionMode.SPECIFIC, track_id)
+
+    @classmethod
+    def parse(cls, text: str) -> "TrackSelection":
+        """Parse only auto, off, or a positive decimal track identity."""
+        if not isinstance(text, str):
+            raise ValueError("A track selection must be text.")
+        normalized = text.strip().lower()
+        if normalized == "auto":
+            return cls.auto()
+        if normalized == "off":
+            return cls.off()
+        if normalized.isdecimal() and int(normalized) > 0:
+            return cls.specific(int(normalized))
+        raise ValueError("Invalid track selection; use auto, off, or a positive ID.")
+
+    def to_mpv_value(self) -> str | int:
+        """Return the reviewed mpv property value for this selection."""
+        if self.mode is TrackSelectionMode.AUTO:
+            return "auto"
+        if self.mode is TrackSelectionMode.OFF:
+            return "no"
+        if self.track_id is None:
+            raise RuntimeError("A specific track selection has no ID.")
+        return self.track_id
+
 
 class SettingKey(StrEnum):
-    """Stable application keys for the settings supported in Slice 04."""
+    """Stable application keys for reviewed per-item settings."""
 
     SPEED = "speed"
     PANSCAN = "panscan"
     VOLUME = "volume"
     MUTE = "mute"
     SUBTITLE_VISIBILITY = "subtitle_visibility"
+    SUBTITLE_LANGUAGES = "subtitle_languages"
+    AUDIO_LANGUAGES = "audio_languages"
+    SUBTITLE_TRACK = "subtitle_track"
+    AUDIO_TRACK = "audio_track"
+    SUBTITLE_DELAY = "subtitle_delay"
+    AUDIO_DELAY = "audio_delay"
 
 
 class SettingValueType(StrEnum):
@@ -22,9 +133,11 @@ class SettingValueType(StrEnum):
 
     NUMBER = "number"
     BOOLEAN = "boolean"
+    LANGUAGE_PREFERENCES = "language_preferences"
+    TRACK_SELECTION = "track_selection"
 
 
-type SettingValue = float | bool
+type SettingValue = float | bool | LanguagePreferences | TrackSelection
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +170,7 @@ class SettingSpec:
             ):
                 raise ValueError("Numeric setting limits must form a finite range.")
         elif self.minimum is not None or self.maximum is not None:
-            raise ValueError("Boolean settings cannot declare numeric limits.")
+            raise ValueError("Non-numeric settings cannot declare numeric limits.")
         self.validate(self.reset_value)
 
     def validate(self, value: object) -> SettingValue:
@@ -65,6 +178,16 @@ class SettingSpec:
         if self.value_type is SettingValueType.BOOLEAN:
             if not isinstance(value, bool):
                 raise ValueError(f"{self.key.value} requires a boolean value.")
+            return value
+        if self.value_type is SettingValueType.LANGUAGE_PREFERENCES:
+            if not isinstance(value, LanguagePreferences):
+                raise ValueError(
+                    f"{self.key.value} requires typed language preferences."
+                )
+            return value
+        if self.value_type is SettingValueType.TRACK_SELECTION:
+            if not isinstance(value, TrackSelection):
+                raise ValueError(f"{self.key.value} requires a typed track selection.")
             return value
 
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -165,6 +288,60 @@ SETTING_SPEC_REGISTRY = SettingSpecRegistry(
             reset_value=True,
             apply_live=True,
         ),
+        SettingSpec(
+            key=SettingKey.SUBTITLE_LANGUAGES,
+            mpv_property="slang",
+            value_type=SettingValueType.LANGUAGE_PREFERENCES,
+            minimum=None,
+            maximum=None,
+            reset_value=LanguagePreferences(()),
+            apply_live=False,
+        ),
+        SettingSpec(
+            key=SettingKey.AUDIO_LANGUAGES,
+            mpv_property="alang",
+            value_type=SettingValueType.LANGUAGE_PREFERENCES,
+            minimum=None,
+            maximum=None,
+            reset_value=LanguagePreferences(()),
+            apply_live=False,
+        ),
+        SettingSpec(
+            key=SettingKey.SUBTITLE_TRACK,
+            mpv_property="sid",
+            value_type=SettingValueType.TRACK_SELECTION,
+            minimum=None,
+            maximum=None,
+            reset_value=TrackSelection.auto(),
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.AUDIO_TRACK,
+            mpv_property="aid",
+            value_type=SettingValueType.TRACK_SELECTION,
+            minimum=None,
+            maximum=None,
+            reset_value=TrackSelection.auto(),
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.SUBTITLE_DELAY,
+            mpv_property="sub-delay",
+            value_type=SettingValueType.NUMBER,
+            minimum=-100.0,
+            maximum=100.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.AUDIO_DELAY,
+            mpv_property="audio-delay",
+            value_type=SettingValueType.NUMBER,
+            minimum=-100.0,
+            maximum=100.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
     )
 )
 
@@ -178,6 +355,12 @@ class PlaybackSettings:
     volume: float | None = None
     mute: bool | None = None
     subtitle_visibility: bool | None = None
+    subtitle_languages: LanguagePreferences | None = None
+    audio_languages: LanguagePreferences | None = None
+    subtitle_track: TrackSelection | None = None
+    audio_track: TrackSelection | None = None
+    subtitle_delay: float | None = None
+    audio_delay: float | None = None
 
     def __post_init__(self) -> None:
         for key in SettingKey:
@@ -192,7 +375,14 @@ class PlaybackSettings:
     def value_for(self, key: SettingKey) -> SettingValue | None:
         """Return one typed layer value without applying inheritance."""
         value = getattr(self, key.value)
-        return value if isinstance(value, (bool, float)) else None
+        return (
+            value
+            if isinstance(
+                value,
+                (bool, float, LanguagePreferences, TrackSelection),
+            )
+            else None
+        )
 
     def with_value(self, key: SettingKey, value: SettingValue) -> "PlaybackSettings":
         """Return a copy with one validated property changed."""
@@ -205,10 +395,34 @@ class PlaybackSettings:
             return replace(self, volume=_require_number(key, normalized))
         if key is SettingKey.MUTE:
             return replace(self, mute=_require_boolean(key, normalized))
-        return replace(
-            self,
-            subtitle_visibility=_require_boolean(key, normalized),
-        )
+        if key is SettingKey.SUBTITLE_VISIBILITY:
+            return replace(
+                self,
+                subtitle_visibility=_require_boolean(key, normalized),
+            )
+        if key is SettingKey.SUBTITLE_LANGUAGES:
+            return replace(
+                self,
+                subtitle_languages=_require_language_preferences(key, normalized),
+            )
+        if key is SettingKey.AUDIO_LANGUAGES:
+            return replace(
+                self,
+                audio_languages=_require_language_preferences(key, normalized),
+            )
+        if key is SettingKey.SUBTITLE_TRACK:
+            return replace(
+                self,
+                subtitle_track=_require_track_selection(key, normalized),
+            )
+        if key is SettingKey.AUDIO_TRACK:
+            return replace(
+                self,
+                audio_track=_require_track_selection(key, normalized),
+            )
+        if key is SettingKey.SUBTITLE_DELAY:
+            return replace(self, subtitle_delay=_require_number(key, normalized))
+        return replace(self, audio_delay=_require_number(key, normalized))
 
     def without_value(self, key: SettingKey) -> "PlaybackSettings":
         """Return a copy with one property restored to inherited state."""
@@ -220,7 +434,19 @@ class PlaybackSettings:
             return replace(self, volume=None)
         if key is SettingKey.MUTE:
             return replace(self, mute=None)
-        return replace(self, subtitle_visibility=None)
+        if key is SettingKey.SUBTITLE_VISIBILITY:
+            return replace(self, subtitle_visibility=None)
+        if key is SettingKey.SUBTITLE_LANGUAGES:
+            return replace(self, subtitle_languages=None)
+        if key is SettingKey.AUDIO_LANGUAGES:
+            return replace(self, audio_languages=None)
+        if key is SettingKey.SUBTITLE_TRACK:
+            return replace(self, subtitle_track=None)
+        if key is SettingKey.AUDIO_TRACK:
+            return replace(self, audio_track=None)
+        if key is SettingKey.SUBTITLE_DELAY:
+            return replace(self, subtitle_delay=None)
+        return replace(self, audio_delay=None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,22 +458,53 @@ class EffectivePlaybackSettings:
     volume: float
     mute: bool
     subtitle_visibility: bool
+    subtitle_languages: LanguagePreferences = LanguagePreferences(())
+    audio_languages: LanguagePreferences = LanguagePreferences(())
+    subtitle_track: TrackSelection = TrackSelection.auto()
+    audio_track: TrackSelection = TrackSelection.auto()
+    subtitle_delay: float = 0.0
+    audio_delay: float = 0.0
 
     def __post_init__(self) -> None:
         for key in SettingKey:
             value = SETTING_SPEC_REGISTRY.validate(key, getattr(self, key.value))
             object.__setattr__(self, key.value, value)
 
+    def value_for(self, key: SettingKey) -> SettingValue:
+        """Return one complete typed effective value."""
+        value = getattr(self, key.value)
+        if isinstance(value, (bool, float, LanguagePreferences, TrackSelection)):
+            return value
+        raise RuntimeError(f"{key.value} resolved to an unsupported value type.")
+
 
 def _require_number(key: SettingKey, value: SettingValue) -> float:
-    if isinstance(value, bool):
-        raise RuntimeError(f"{key.value} metadata is not numeric.")
-    return value
+    if isinstance(value, float):
+        return value
+    raise RuntimeError(f"{key.value} metadata is not numeric.")
 
 
 def _require_boolean(key: SettingKey, value: SettingValue) -> bool:
     if not isinstance(value, bool):
         raise RuntimeError(f"{key.value} metadata is not boolean.")
+    return value
+
+
+def _require_language_preferences(
+    key: SettingKey,
+    value: SettingValue,
+) -> LanguagePreferences:
+    if not isinstance(value, LanguagePreferences):
+        raise RuntimeError(f"{key.value} metadata is not a language preference.")
+    return value
+
+
+def _require_track_selection(
+    key: SettingKey,
+    value: SettingValue,
+) -> TrackSelection:
+    if not isinstance(value, TrackSelection):
+        raise RuntimeError(f"{key.value} metadata is not a track selection.")
     return value
 
 
@@ -259,6 +516,20 @@ def _reset_boolean(key: SettingKey) -> bool:
     return _require_boolean(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
 
 
+def _reset_language_preferences(key: SettingKey) -> LanguagePreferences:
+    return _require_language_preferences(
+        key,
+        SETTING_SPEC_REGISTRY.require(key).reset_value,
+    )
+
+
+def _reset_track_selection(key: SettingKey) -> TrackSelection:
+    return _require_track_selection(
+        key,
+        SETTING_SPEC_REGISTRY.require(key).reset_value,
+    )
+
+
 EMPTY_PLAYBACK_SETTINGS = PlaybackSettings()
 DETERMINISTIC_BASELINE = PlaybackSettings(
     speed=_reset_number(SettingKey.SPEED),
@@ -266,6 +537,12 @@ DETERMINISTIC_BASELINE = PlaybackSettings(
     volume=_reset_number(SettingKey.VOLUME),
     mute=_reset_boolean(SettingKey.MUTE),
     subtitle_visibility=_reset_boolean(SettingKey.SUBTITLE_VISIBILITY),
+    subtitle_languages=_reset_language_preferences(SettingKey.SUBTITLE_LANGUAGES),
+    audio_languages=_reset_language_preferences(SettingKey.AUDIO_LANGUAGES),
+    subtitle_track=_reset_track_selection(SettingKey.SUBTITLE_TRACK),
+    audio_track=_reset_track_selection(SettingKey.AUDIO_TRACK),
+    subtitle_delay=_reset_number(SettingKey.SUBTITLE_DELAY),
+    audio_delay=_reset_number(SettingKey.AUDIO_DELAY),
 )
 
 
@@ -294,6 +571,24 @@ class EffectiveSettingsResolver:
                 SettingKey.SUBTITLE_VISIBILITY,
                 layers,
             ),
+            subtitle_languages=self._resolve_language_preferences(
+                SettingKey.SUBTITLE_LANGUAGES,
+                layers,
+            ),
+            audio_languages=self._resolve_language_preferences(
+                SettingKey.AUDIO_LANGUAGES,
+                layers,
+            ),
+            subtitle_track=self._resolve_track_selection(
+                SettingKey.SUBTITLE_TRACK,
+                layers,
+            ),
+            audio_track=self._resolve_track_selection(
+                SettingKey.AUDIO_TRACK,
+                layers,
+            ),
+            subtitle_delay=self._resolve_number(SettingKey.SUBTITLE_DELAY, layers),
+            audio_delay=self._resolve_number(SettingKey.AUDIO_DELAY, layers),
         )
 
     def _resolve_number(
@@ -302,9 +597,9 @@ class EffectiveSettingsResolver:
         layers: tuple[PlaybackSettings, ...],
     ) -> float:
         value = self._resolve_value(key, layers)
-        if isinstance(value, bool):
-            raise RuntimeError(f"{key.value} resolved to the wrong value type.")
-        return value
+        if isinstance(value, float):
+            return value
+        raise RuntimeError(f"{key.value} resolved to the wrong value type.")
 
     def _resolve_boolean(
         self,
@@ -313,6 +608,26 @@ class EffectiveSettingsResolver:
     ) -> bool:
         value = self._resolve_value(key, layers)
         if not isinstance(value, bool):
+            raise RuntimeError(f"{key.value} resolved to the wrong value type.")
+        return value
+
+    def _resolve_language_preferences(
+        self,
+        key: SettingKey,
+        layers: tuple[PlaybackSettings, ...],
+    ) -> LanguagePreferences:
+        value = self._resolve_value(key, layers)
+        if not isinstance(value, LanguagePreferences):
+            raise RuntimeError(f"{key.value} resolved to the wrong value type.")
+        return value
+
+    def _resolve_track_selection(
+        self,
+        key: SettingKey,
+        layers: tuple[PlaybackSettings, ...],
+    ) -> TrackSelection:
+        value = self._resolve_value(key, layers)
+        if not isinstance(value, TrackSelection):
             raise RuntimeError(f"{key.value} resolved to the wrong value type.")
         return value
 

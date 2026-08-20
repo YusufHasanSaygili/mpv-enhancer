@@ -280,7 +280,8 @@ class SelectedItemsSettingsPanel(QWidget):
         self.reset_all_button.setEnabled(enabled)
         for adapter in self._adapters.values():
             adapter.bind(selected_items)
-            self._bind_control(adapter.key, adapter.state)
+            if adapter.key in self._controls:
+                self._bind_control(adapter.key, adapter.state)
 
     def _bind_control(self, key: SettingKey, state: SelectedSettingValue) -> None:
         control = self._controls[key]
@@ -298,7 +299,7 @@ class SelectedItemsSettingsPanel(QWidget):
                 value = state.value
             else:
                 value = SETTING_SPEC_REGISTRY.require(key).reset_value
-            if value is None or isinstance(value, bool):
+            if not isinstance(value, float):
                 raise RuntimeError(f"{key.value} resolved to the wrong control type.")
             if isinstance(control, QSpinBox):
                 control.setValue(round(value))
