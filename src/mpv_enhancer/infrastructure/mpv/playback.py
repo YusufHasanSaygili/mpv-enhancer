@@ -113,7 +113,7 @@ class MpvJsonPlaybackAdapter(QObject):
             self._observe_properties()
 
     def _observe_properties(self) -> None:
-        for name in ("duration", "time-pos", "pause"):
+        for name in ("duration", "time-pos", "pause", "track-list"):
             self._client.observe_property(name, self._property_changed)
 
     def load_file(self, path: Path, generation: int) -> None:

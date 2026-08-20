@@ -256,5 +256,18 @@ def test_embedded_session_reports_disconnect_and_restores_observations() -> None
 
     assert failures == ["Playback connection was lost. Retry or stop playback."]
     assert recoveries == ["recovered"]
-    assert len(transport.sent) == 7
+    sent_commands = [json.loads(payload)["command"] for payload in transport.sent]
+    assert [
+        command[2] for command in sent_commands if command[0] == "observe_property"
+    ] == [
+        "duration",
+        "time-pos",
+        "pause",
+        "track-list",
+        "duration",
+        "time-pos",
+        "pause",
+        "track-list",
+    ]
+    assert sent_commands[-1] == ["get_property", "mpv-version"]
     assert session.shutdown()
