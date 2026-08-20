@@ -12,23 +12,26 @@ def _read(relative_path: str) -> str:
     return (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_v04_release_version_is_consistent() -> None:
+def test_v05_release_version_is_consistent() -> None:
     configuration = tomllib.loads(_read("pyproject.toml"))
 
-    assert __version__ == "0.4.0"
+    assert __version__ == "0.5.0"
     assert configuration["project"]["version"] == __version__
 
 
-def test_v04_release_documentation_exists() -> None:
+def test_v05_release_documentation_exists() -> None:
     changelog = _read("CHANGELOG.md")
-    release_notes = _read("docs/releases/v0.4.md")
+    release_notes = _read("docs/releases/v0.5.md")
 
-    assert "## [0.4.0] - 2026-08-20" in changelog
-    assert "S04-T01" in release_notes
-    assert "S04-T09" in release_notes
-    assert "episodes 2, 4, and 6" in release_notes
+    assert "## [0.5.0] - 2026-08-20" in changelog
+    assert "S05-T01" in release_notes
+    assert "S05-T08" in release_notes
+    assert "Episode 6" in release_notes
+    assert "Episode 7" in release_notes
+    assert "tr,tur,en" in release_notes
+    assert "es,spa,en" in release_notes
     assert "no-leak" in release_notes
-    assert "per-item settings" in release_notes
+    assert "language" in release_notes
 
 
 def test_tag_workflow_builds_and_verifies_public_release_assets() -> None:
@@ -87,13 +90,13 @@ def test_public_tag_matches_the_release_version() -> None:
     script = REPOSITORY_ROOT / "scripts" / "release_version.py"
 
     valid = subprocess.run(
-        [sys.executable, str(script), "v0.4"],
+        [sys.executable, str(script), "v0.5"],
         check=False,
         capture_output=True,
         text=True,
     )
     invalid = subprocess.run(
-        [sys.executable, str(script), "v0.3"],
+        [sys.executable, str(script), "v0.4"],
         check=False,
         capture_output=True,
         text=True,
@@ -101,7 +104,7 @@ def test_public_tag_matches_the_release_version() -> None:
 
     assert valid.returncode == 0
     assert invalid.returncode == 1
-    assert "expected 'v0.4'" in invalid.stderr
+    assert "expected 'v0.5'" in invalid.stderr
 
 
 def test_release_smoke_covers_queue_settings_and_playback_workflows() -> None:
