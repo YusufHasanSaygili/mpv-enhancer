@@ -32,6 +32,20 @@ The first command checks Ruff formatting and linting, strict Mypy typing, the
 pytest suite with coverage, and tracked-source secrets. GitHub repeats these
 checks on a clean Windows runner.
 
+The real-mpv recovery test is intentionally opt-in. Run it only with a trusted
+local executable; it creates synthetic corrupt input under pytest's temporary
+directory and does not use personal media:
+
+```powershell
+$env:MPV_ENHANCER_RUN_REAL_MPV_TESTS = "1"
+$env:MPV_ENHANCER_REAL_MPV_PATH = "C:\Tools\mpv\mpv.exe"
+uv run pytest tests/test_real_mpv_integration.py
+```
+
+The test covers an unplayable file, one supervised restart, reconnect, retry,
+stop, and child-process cleanup. These environment variables are test-only and
+are not read by the packaged application.
+
 ## Privacy and safe test data
 
 Review every staged file. Do not commit a secret, credential, token, personal

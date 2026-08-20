@@ -43,6 +43,7 @@ class PlaybackController(QObject):
     """Coordinate a stable queue identity with the fixed playback adapter."""
 
     stateChanged = Signal(object)
+    failureOccurred = Signal(str)
 
     def __init__(
         self,
@@ -111,6 +112,21 @@ class PlaybackController(QObject):
             )
         )
         return True
+
+    def retry_current(self) -> bool:
+        """Reload the exact current identity with a fresh generation."""
+        current_id = self._model.current_item_id
+        if current_id is None:
+            return False
+        row = next(
+            (
+                index
+                for index, item in enumerate(self._model.items)
+                if item.item_id == current_id
+            ),
+            None,
+        )
+        return False if row is None else self.load_row(row)
 
     def next(self) -> bool:
         return self._load_relative(1)
@@ -206,6 +222,9 @@ class PlaybackController(QObject):
                     duration_seconds=self._state.duration_seconds,
                     position_seconds=self._state.position_seconds,
                 )
+            )
+            self.failureOccurred.emit(
+                "The file could not be played. Retry or stop playback."
             )
         elif event.end_kind is PlaybackEndKind.STOPPED:
             self._set_state(

@@ -25,6 +25,7 @@ from mpv_enhancer.infrastructure.mpv.embedded import EmbeddedMpvSession
 from mpv_enhancer.infrastructure.mpv.playback import PlaybackAdapter
 from mpv_enhancer.infrastructure.preferences import MpvPreferenceStore
 from mpv_enhancer.ui.playback_controller import PlaybackController, PlaybackState
+from mpv_enhancer.ui.playback_failure import PlaybackFailurePanel
 from mpv_enhancer.ui.preferences_dialog import PreferencesDialog
 from mpv_enhancer.ui.queue_controller import QueueEditOutcome, QueueUndoController
 from mpv_enhancer.ui.queue_model import QueueListModel
@@ -42,6 +43,10 @@ class PlaybackSession(Protocol):
 
     @property
     def playback_adapter(self) -> PlaybackAdapter: ...
+
+    def set_failure_listener(self, listener: Callable[[str], None]) -> None: ...
+
+    def set_recovered_listener(self, listener: Callable[[], None]) -> None: ...
 
 
 PlaybackSessionFactory = Callable[[int], PlaybackSession]
@@ -101,9 +106,11 @@ class MainWindow(QMainWindow):
         video_layout.setContentsMargins(0, 0, 0, 0)
         video_layout.setSpacing(8)
         self.video_host = VideoHost(video_content)
+        self.playback_failure_panel = PlaybackFailurePanel(video_content)
         self.transport_controls = TransportControls(video_content)
         self.transport_controls.set_playback_available(False)
         video_layout.addWidget(self.video_host, 1)
+        video_layout.addWidget(self.playback_failure_panel)
         video_layout.addWidget(self.transport_controls)
         video = self._create_region(
             "videoRegion",
@@ -121,6 +128,8 @@ class MainWindow(QMainWindow):
         self.transport_controls.nextRequested.connect(self._request_next)
         self.transport_controls.stopRequested.connect(self._request_stop)
         self.transport_controls.seekRequested.connect(self._request_seek)
+        self.playback_failure_panel.retryRequested.connect(self._retry_failed_playback)
+        self.playback_failure_panel.stopRequested.connect(self._stop_failed_playback)
         selection_summary_label = settings.findChild(
             QLabel,
             "settingsRegionDescription",
@@ -184,6 +193,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.No,
             )
             if answer is QMessageBox.StandardButton.Yes:
+                if self._playback_controller is not None:
+                    self._playback_controller.stop()
                 outcome = self.queue_controller.remove_selected(stop_current=True)
         if outcome is QueueEditOutcome.NO_CHANGE:
             self.statusBar().showMessage("Select queue items to remove.")
@@ -201,6 +212,8 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.No,
         )
         if answer is QMessageBox.StandardButton.Yes:
+            if self._playback_controller is not None:
+                self._playback_controller.stop()
             self.queue_controller.clear_queue(stop_current=True)
 
     def configure_mpv_preferences(
@@ -268,6 +281,8 @@ class MainWindow(QMainWindow):
         if not diagnostics.is_available or diagnostics.executable is None:
             return
         session = self._playback_session_factory(self.video_host.native_handle)
+        session.set_failure_listener(self._show_playback_failure)
+        session.set_recovered_listener(self._playback_runtime_recovered)
         if session.start(diagnostics.executable):
             self._playback_session = session
             controller = PlaybackController(
@@ -276,6 +291,7 @@ class MainWindow(QMainWindow):
                 self,
             )
             controller.stateChanged.connect(self.transport_controls.apply_state)
+            controller.failureOccurred.connect(self._show_playback_failure)
             self._playback_controller = controller
             self.transport_controls.set_playback_available(True)
             return
@@ -284,6 +300,7 @@ class MainWindow(QMainWindow):
 
     def _shutdown_playback(self) -> None:
         self._playback_controller = None
+        self.playback_failure_panel.clear_failure()
         self.transport_controls.apply_state(PlaybackState())
         self.transport_controls.set_playback_available(False)
         session = self._playback_session
@@ -319,6 +336,26 @@ class MainWindow(QMainWindow):
     def _request_seek(self, seconds: float) -> None:
         if self._playback_controller is not None:
             self._playback_controller.seek_absolute(seconds)
+
+    def _show_playback_failure(self, message: str) -> None:
+        self.playback_failure_panel.show_failure(message)
+        self.statusBar().showMessage("Playback needs attention")
+
+    def _playback_runtime_recovered(self) -> None:
+        self.statusBar().showMessage("mpv restarted; retry the current item")
+
+    def _retry_failed_playback(self) -> None:
+        controller = self._playback_controller
+        if controller is not None and controller.retry_current():
+            self.playback_failure_panel.clear_failure()
+            self.statusBar().showMessage("Retrying playback")
+
+    def _stop_failed_playback(self) -> None:
+        controller = self._playback_controller
+        if controller is not None:
+            controller.stop()
+        self.playback_failure_panel.clear_failure()
+        self.statusBar().showMessage("Playback stopped")
 
     def _create_region(
         self,
