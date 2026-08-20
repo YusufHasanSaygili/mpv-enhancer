@@ -1,8 +1,9 @@
 import ctypes
+import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtWidgets import QLabel, QMainWindow
 
 from mpv_enhancer.infrastructure.mpv.discovery import (
     MpvDiagnostics,
@@ -14,7 +15,10 @@ from mpv_enhancer.infrastructure.mpv.embedded import (
     build_embedded_mpv_arguments,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
-from mpv_enhancer.infrastructure.mpv.pipe_transport import NamedPipeCallbacks
+from mpv_enhancer.infrastructure.mpv.pipe_transport import (
+    NamedPipeCallbacks,
+    PipeTransportState,
+)
 from mpv_enhancer.infrastructure.mpv.playback import PlaybackEvent
 from mpv_enhancer.ui.main_window import MainWindow
 from mpv_enhancer.ui.video_host import VideoHost
@@ -60,6 +64,8 @@ class FakePlaybackSession:
         self.started_with: list[Path] = []
         self.shutdown_calls = 0
         self.playback_adapter = NoopPlaybackAdapter()
+        self.failure_listener: Callable[[str], None] | None = None
+        self.recovered_listener: Callable[[], None] | None = None
 
     def start(self, executable: Path) -> bool:
         self.started_with.append(executable)
@@ -68,6 +74,16 @@ class FakePlaybackSession:
     def shutdown(self) -> bool:
         self.shutdown_calls += 1
         return True
+
+    def set_failure_listener(self, listener: Callable[[str], None]) -> None:
+        self.failure_listener = listener
+
+    def set_recovered_listener(self, listener: Callable[[], None]) -> None:
+        self.recovered_listener = listener
+
+    def emit_failure(self, message: str) -> None:
+        assert self.failure_listener is not None
+        self.failure_listener(message)
 
 
 class NoopPlaybackAdapter:
@@ -182,5 +198,59 @@ def test_main_window_owns_embedded_session_and_full_screen_lifecycle(qtbot) -> N
     assert sessions[0].host_hwnd == original_handle
     assert sessions[0].started_with == [Path("C:/Tools/mpv.exe")]
 
+    sessions[0].emit_failure(
+        "mpv stopped unexpectedly and restarted. Retry or stop playback."
+    )
+    failure_message = window.findChild(QLabel, "playbackFailureMessage")
+    assert failure_message is not None
+    assert failure_message.isVisible()
+    assert "Retry or stop playback" in failure_message.text()
+
     window.close()
     assert sessions[0].shutdown_calls == 1
+
+
+def test_embedded_session_reports_disconnect_and_restores_observations() -> None:
+    supervisor = FakeProcessSupervisor()
+    transports: list[FakePipeTransport] = []
+
+    def create_transport(callbacks: NamedPipeCallbacks) -> FakePipeTransport:
+        transport = FakePipeTransport(callbacks)
+        transports.append(transport)
+        return transport
+
+    session = EmbeddedMpvSession(
+        654,
+        process_supervisor=supervisor,
+        transport_factory=create_transport,
+    )
+    failures: list[str] = []
+    recoveries: list[str] = []
+    session.set_failure_listener(failures.append)
+    session.set_recovered_listener(lambda: recoveries.append("recovered"))
+    session.playback_adapter.begin_observing(
+        lambda _name, _value: None,
+        lambda _event: None,
+    )
+    assert session.start(Path("C:/Tools/mpv.exe"))
+    transport = transports[0]
+
+    transport.callbacks.state_changed(PipeTransportState.CONNECTED)
+    transport.callbacks.state_changed(PipeTransportState.DISCONNECTED)
+    transport.callbacks.state_changed(PipeTransportState.CONNECTED)
+    recovery_probe = json.loads(transport.sent[-1])
+    transport.callbacks.data_received(
+        json.dumps(
+            {
+                "request_id": recovery_probe["request_id"],
+                "error": "success",
+                "data": "synthetic-version",
+            }
+        ).encode()
+        + b"\n"
+    )
+
+    assert failures == ["Playback connection was lost. Retry or stop playback."]
+    assert recoveries == ["recovered"]
+    assert len(transport.sent) == 7
+    assert session.shutdown()

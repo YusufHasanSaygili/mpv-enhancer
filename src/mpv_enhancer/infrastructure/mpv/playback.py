@@ -97,6 +97,17 @@ class MpvJsonPlaybackAdapter(QObject):
         self._observing = True
         self.propertyChanged.connect(listener)
         self.playbackEvent.connect(event_listener)
+        self._observe_properties()
+
+    def reset_runtime(self) -> None:
+        """Discard old entry mappings and restore observations after restart."""
+        self._pending_generations.clear()
+        self._entry_generations.clear()
+        self._loading_entries.clear()
+        if self._observing:
+            self._observe_properties()
+
+    def _observe_properties(self) -> None:
         for name in ("duration", "time-pos", "pause"):
             self._client.observe_property(name, self._property_changed)
 
