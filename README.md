@@ -21,6 +21,8 @@ per-item settings are planned for later releases. Ctrl selects non-adjacent
 queue items, Shift selects ranges, and Ctrl+A selects the full queue.
 Selected items can be removed with Delete, the full queue can be cleared after
 confirmation, and queue edits support Undo and Redo.
+Queue rows provide accessible labels, elide long titles, and show a clear
+override-status placeholder while per-item settings are still in development.
 
 See [CHANGELOG.md](CHANGELOG.md) and the
 [v0.1.1 recovery release notes](docs/releases/v0.1.1.md) for the verified,
