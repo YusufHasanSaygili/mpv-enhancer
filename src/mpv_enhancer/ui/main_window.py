@@ -27,6 +27,7 @@ from mpv_enhancer.domain.selection_settings import (
     reset_selection_setting,
 )
 from mpv_enhancer.domain.settings import SettingKey
+from mpv_enhancer.infrastructure.mpv.capabilities import MpvCapabilities
 from mpv_enhancer.infrastructure.mpv.discovery import (
     MpvDiagnostics,
     MpvDiscoverer,
@@ -58,6 +59,11 @@ class PlaybackSession(Protocol):
     def set_failure_listener(self, listener: Callable[[str], None]) -> None: ...
 
     def set_recovered_listener(self, listener: Callable[[], None]) -> None: ...
+
+    def set_capabilities_listener(
+        self,
+        listener: Callable[[MpvCapabilities], None],
+    ) -> None: ...
 
 
 PlaybackSessionFactory = Callable[[int], PlaybackSession]
@@ -388,6 +394,7 @@ class MainWindow(QMainWindow):
         session = self._playback_session_factory(self.video_host.native_handle)
         session.set_failure_listener(self._show_playback_failure)
         session.set_recovered_listener(self._playback_runtime_recovered)
+        session.set_capabilities_listener(self._capabilities_received)
         if session.start(diagnostics.executable):
             self._playback_session = session
             controller = PlaybackController(
@@ -412,10 +419,18 @@ class MainWindow(QMainWindow):
         session.shutdown()
         self.statusBar().showMessage("mpv could not start")
 
+    def _capabilities_received(
+        self,
+        capabilities: MpvCapabilities,
+    ) -> None:
+        if self._playback_session is not None:
+            self.settings_panel.set_capabilities(capabilities)
+
     def _shutdown_playback(self) -> None:
         self._playback_controller = None
         self.settings_panel.set_track_availability(None)
         self.settings_panel.clear_source_dimensions()
+        self.settings_panel.set_capabilities(None)
         self.playback_failure_panel.clear_failure()
         self.transport_controls.apply_state(PlaybackState())
         self.transport_controls.set_playback_available(False)

@@ -11,6 +11,7 @@ from typing import Protocol
 from PySide6.QtCore import QObject, Signal
 
 from mpv_enhancer.domain.settings import EffectivePlaybackSettings, VideoDimensions
+from mpv_enhancer.infrastructure.mpv.capabilities import MpvCapabilities
 from mpv_enhancer.infrastructure.mpv.json_ipc import (
     JsonValue,
     MpvIpcEvent,
@@ -108,6 +109,10 @@ class MpvJsonPlaybackAdapter(QObject):
         self._settings_adapter = MpvSettingsAdapter(client)
         self._active_settings: EffectivePlaybackSettings | None = None
         self._active_generation: int | None = None
+
+    def set_capabilities(self, capabilities: MpvCapabilities) -> None:
+        """Gate managed writes without changing basic playback availability."""
+        self._settings_adapter.set_capabilities(capabilities)
 
     def begin_observing(
         self,

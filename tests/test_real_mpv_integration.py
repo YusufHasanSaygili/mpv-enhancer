@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QMainWindow
 
 from mpv_enhancer.domain.models import Playlist, QueueItem
 from mpv_enhancer.domain.settings import EffectivePlaybackSettings
+from mpv_enhancer.infrastructure.mpv.capabilities import MpvCapabilities
 from mpv_enhancer.infrastructure.mpv.embedded import EmbeddedMpvSession
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.pipe_transport import PipeTransportState
@@ -97,6 +98,8 @@ def test_real_mpv_zoom_pan_visual_smoke(qtbot, tmp_path: Path) -> None:
     window.show()
     session = EmbeddedMpvSession(host.native_handle)
     video_ready = Event()
+    capabilities: list[MpvCapabilities] = []
+    session.set_capabilities_listener(capabilities.append)
 
     try:
         assert session.start(executable)
@@ -104,6 +107,10 @@ def test_real_mpv_zoom_pan_visual_smoke(qtbot, tmp_path: Path) -> None:
             qtbot,
             lambda: session.transport_state is PipeTransportState.CONNECTED,
         )
+        _wait_until(qtbot, lambda: bool(capabilities))
+        assert capabilities[0].supports_property("video-zoom")
+        assert capabilities[0].supports_command("loadfile")
+        assert capabilities[0].supports_command("set")
         observation = session.client.observe_property(
             "video-params",
             lambda _name, value: video_ready.set() if isinstance(value, dict) else None,
