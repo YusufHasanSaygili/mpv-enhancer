@@ -18,8 +18,9 @@ quality gate. Playback, queue behavior, and per-item settings are planned for
 later releases.
 
 See [CHANGELOG.md](CHANGELOG.md) and the
-[v0.1 release notes](docs/releases/v0.1.md) for the immutable first-slice fork
-point, compatibility details, assets, and known limitations.
+[v0.1.1 recovery release notes](docs/releases/v0.1.1.md) for the verified,
+immutable first-slice fork point, compatibility details, assets, and known
+limitations.
 
 ## Contributing
 

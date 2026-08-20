@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-Security fixes are applied to the latest published pre-release (`v0.1`) and the
-current `main` branch. Pre-release versions may change quickly; upgrading to the
-newest release is the supported remediation path.
+Security fixes are applied to the latest published pre-release (`v0.1.1`) and
+the current `main` branch. Pre-release versions may change quickly; upgrading
+to the newest release is the supported remediation path.
 
 ## Reporting a vulnerability
 
