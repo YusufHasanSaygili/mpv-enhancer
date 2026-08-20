@@ -105,7 +105,7 @@ jobs:
             "- Complete quality gate: PASS",
             "- Locked runtime dependency audit: PASS",
             "- Fresh virtual environment install: PASS",
-            "- Offscreen application shell launch and close: PASS",
+            "- Offscreen 20-file queue drop, selection, reorder, undo, and shell lifecycle: PASS",
             "- Public download and checksum verification: see the successful Verify public Windows asset job in the workflow run",
             "",
             "## Reviewed assets",
@@ -225,7 +225,7 @@ jobs:
             "- Public download: PASS",
             "- SHA-256 verification: PASS",
             "- Fresh virtual environment install: PASS",
-            "- Offscreen application shell launch and close: PASS",
+            "- Offscreen 20-file queue drop, selection, reorder, undo, and shell lifecycle: PASS",
             "",
             "## Downloaded assets",
             ""

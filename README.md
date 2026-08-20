@@ -11,10 +11,10 @@ application will use Python, PySide6, and Qt Widgets.
 
 ## Project status
 
-The v0.1 foundation is available as a public pre-release. The repository
+The v0.2 queue slice is available as a public pre-release. The repository
 contains a runnable three-region desktop shell, persistent mpv preferences,
 safe local paths and rotating diagnostics, automated tests, and a Windows CI
-quality gate. The development branch now also includes an ordered queue and
+quality gate. The application includes an ordered queue and
 external Explorer file drop with partial rejection of unsupported files. Queue
 items can be reordered by dragging or with `Alt+Up` and `Alt+Down`. Playback and
 per-item settings are planned for later releases. Ctrl selects non-adjacent
@@ -24,10 +24,10 @@ confirmation, and queue edits support Undo and Redo.
 Queue rows provide accessible labels, elide long titles, and show a clear
 override-status placeholder while per-item settings are still in development.
 
-See [CHANGELOG.md](CHANGELOG.md) and the
-[v0.1.1 recovery release notes](docs/releases/v0.1.1.md) for the verified,
-immutable first-slice fork point, compatibility details, assets, and known
-limitations.
+See [CHANGELOG.md](CHANGELOG.md) and the [v0.2 release notes](docs/releases/v0.2.md)
+for compatibility details, assets, known limitations, and the immutable Slice
+02 fork point. The [v0.1.1 recovery release](docs/releases/v0.1.1.md) remains
+available as the verified first-slice fork point.
 
 ## Contributing
 
