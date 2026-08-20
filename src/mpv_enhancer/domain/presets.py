@@ -52,7 +52,9 @@ def _patch_preview(patch: SettingPatch) -> str:
         return f"Volume → {patch.value:g}%"
     if patch.key is SettingKey.MUTE:
         return f"Mute → {'On' if patch.value else 'Off'}"
-    return f"Subtitles → {'On' if patch.value else 'Off'}"
+    if patch.key is SettingKey.SUBTITLE_VISIBILITY:
+        return f"Subtitles → {'On' if patch.value else 'Off'}"
+    raise ValueError(f"No starter preset preview exists for {patch.key.value}.")
 
 
 STARTER_PRESETS = (

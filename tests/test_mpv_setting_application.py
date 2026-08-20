@@ -10,8 +10,10 @@ from mpv_enhancer.domain.selection_settings import (
 )
 from mpv_enhancer.domain.settings import (
     EffectivePlaybackSettings,
+    LanguagePreferences,
     PlaybackSettings,
     SettingKey,
+    TrackSelection,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.playback import MpvJsonPlaybackAdapter
@@ -52,6 +54,12 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
             volume=80.0,
             mute=True,
             subtitle_visibility=False,
+            subtitle_languages=LanguagePreferences.parse("tr,tur,en"),
+            audio_languages=LanguagePreferences.parse("es,spa,en"),
+            subtitle_track=TrackSelection.specific(7),
+            audio_track=TrackSelection.off(),
+            subtitle_delay=1.25,
+            audio_delay=-0.5,
         )
     )
 
@@ -61,11 +69,23 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
+        ("set_property", "slang", ""),
+        ("set_property", "alang", ""),
+        ("set_property", "sid", "auto"),
+        ("set_property", "aid", "auto"),
+        ("set_property", "sub-delay", 0.0),
+        ("set_property", "audio-delay", 0.0),
         ("set_property", "speed", 1.2),
         ("set_property", "panscan", 0.75),
         ("set_property", "volume", 80.0),
         ("set_property", "mute", True),
         ("set_property", "sub-visibility", False),
+        ("set_property", "slang", "tr,tur,en"),
+        ("set_property", "alang", "es,spa,en"),
+        ("set_property", "sid", 7),
+        ("set_property", "aid", "no"),
+        ("set_property", "sub-delay", 1.25),
+        ("set_property", "audio-delay", -0.5),
     ]
 
 
@@ -90,14 +110,20 @@ def test_controller_applies_settings_before_load_without_next_episode_leak() -> 
     second_load = client.commands.index(
         ("loadfile", "synthetic\\episode-02.mkv", "replace")
     )
-    assert first_load == 10
-    assert second_load == 21
-    assert client.commands[16:21] == [
+    assert first_load == 22
+    assert second_load == 45
+    assert client.commands[34:45] == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
         ("set_property", "volume", 85.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
+        ("set_property", "slang", ""),
+        ("set_property", "alang", ""),
+        ("set_property", "sid", "auto"),
+        ("set_property", "aid", "auto"),
+        ("set_property", "sub-delay", 0.0),
+        ("set_property", "audio-delay", 0.0),
     ]
 
 
@@ -116,13 +142,19 @@ def test_current_item_setting_changes_are_applied_live_without_reload() -> None:
     model.replace_items(updated, item.item_id)
 
     assert controller.refresh_current_settings()
-    assert len(client.commands) == before_live_update + 10
-    assert client.commands[-5:] == [
+    assert len(client.commands) == before_live_update + 22
+    assert client.commands[-11:] == [
         ("set_property", "speed", 1.5),
         ("set_property", "panscan", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
+        ("set_property", "slang", ""),
+        ("set_property", "alang", ""),
+        ("set_property", "sid", "auto"),
+        ("set_property", "aid", "auto"),
+        ("set_property", "sub-delay", 0.0),
+        ("set_property", "audio-delay", 0.0),
     ]
 
 

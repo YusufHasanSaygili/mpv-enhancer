@@ -4,8 +4,10 @@ import pytest
 
 from mpv_enhancer.domain.settings import (
     SETTING_SPEC_REGISTRY,
+    LanguagePreferences,
     SettingKey,
     SettingValueType,
+    TrackSelection,
 )
 
 
@@ -35,6 +37,54 @@ def test_core_registry_declares_exact_safe_settings_and_metadata() -> None:
             None,
             None,
             True,
+            True,
+        ),
+        SettingKey.SUBTITLE_LANGUAGES: (
+            "slang",
+            SettingValueType.LANGUAGE_PREFERENCES,
+            None,
+            None,
+            LanguagePreferences(()),
+            False,
+        ),
+        SettingKey.AUDIO_LANGUAGES: (
+            "alang",
+            SettingValueType.LANGUAGE_PREFERENCES,
+            None,
+            None,
+            LanguagePreferences(()),
+            False,
+        ),
+        SettingKey.SUBTITLE_TRACK: (
+            "sid",
+            SettingValueType.TRACK_SELECTION,
+            None,
+            None,
+            TrackSelection.auto(),
+            True,
+        ),
+        SettingKey.AUDIO_TRACK: (
+            "aid",
+            SettingValueType.TRACK_SELECTION,
+            None,
+            None,
+            TrackSelection.auto(),
+            True,
+        ),
+        SettingKey.SUBTITLE_DELAY: (
+            "sub-delay",
+            SettingValueType.NUMBER,
+            -100.0,
+            100.0,
+            0.0,
+            True,
+        ),
+        SettingKey.AUDIO_DELAY: (
+            "audio-delay",
+            SettingValueType.NUMBER,
+            -100.0,
+            100.0,
+            0.0,
             True,
         ),
     }

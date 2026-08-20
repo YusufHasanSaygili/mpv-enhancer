@@ -6,9 +6,11 @@ from typing import Protocol
 from mpv_enhancer.domain.settings import (
     SETTING_SPEC_REGISTRY,
     EffectivePlaybackSettings,
+    LanguagePreferences,
     SettingKey,
     SettingSpecRegistry,
     SettingValue,
+    TrackSelection,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 
@@ -45,19 +47,19 @@ class MpvSettingsAdapter:
             )
 
     def _set_property(self, name: str, value: SettingValue) -> None:
-        self._client.request(("set_property", name, value))
+        self._client.request(("set_property", name, _mpv_value(value)))
 
 
 def _effective_value(
     settings: EffectivePlaybackSettings,
     key: SettingKey,
 ) -> SettingValue:
-    if key is SettingKey.SPEED:
-        return settings.speed
-    if key is SettingKey.PANSCAN:
-        return settings.panscan
-    if key is SettingKey.VOLUME:
-        return settings.volume
-    if key is SettingKey.MUTE:
-        return settings.mute
-    return settings.subtitle_visibility
+    return settings.value_for(key)
+
+
+def _mpv_value(value: SettingValue) -> JsonValue:
+    if isinstance(value, LanguagePreferences):
+        return value.to_mpv_value()
+    if isinstance(value, TrackSelection):
+        return value.to_mpv_value()
+    return value

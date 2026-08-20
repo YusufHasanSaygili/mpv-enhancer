@@ -14,7 +14,11 @@ from PySide6.QtWidgets import QApplication, QDoubleSpinBox
 from mpv_enhancer.app import create_application
 from mpv_enhancer.domain.models import Playlist, QueueItem
 from mpv_enhancer.domain.selection_settings import SelectedSettingState
-from mpv_enhancer.domain.settings import PlaybackSettings, SettingKey
+from mpv_enhancer.domain.settings import (
+    SETTING_SPEC_REGISTRY,
+    PlaybackSettings,
+    SettingKey,
+)
 from mpv_enhancer.infrastructure.mpv.discovery import (
     MpvDiagnostics,
     MpvDiagnosticsStatus,
@@ -176,14 +180,21 @@ def _verify_no_leak_playback_settings() -> None:
         for index, command in enumerate(client.commands)
         if command and command[0] == "loadfile"
     ]
-    if load_indexes != [10, 21]:
+    managed_count = len(SETTING_SPEC_REGISTRY.specs)
+    if load_indexes != [managed_count * 2, managed_count * 4 + 1]:
         raise RuntimeError("Effective settings were not applied before every load.")
-    if client.commands[16:21] != [
+    if client.commands[load_indexes[1] - managed_count : load_indexes[1]] != [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
+        ("set_property", "slang", ""),
+        ("set_property", "alang", ""),
+        ("set_property", "sid", "auto"),
+        ("set_property", "aid", "auto"),
+        ("set_property", "sub-delay", 0.0),
+        ("set_property", "audio-delay", 0.0),
     ]:
         raise RuntimeError("Managed settings leaked into the next episode.")
 

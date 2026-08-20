@@ -8,23 +8,52 @@ from mpv_enhancer.domain.settings import (
     DETERMINISTIC_BASELINE,
     EffectivePlaybackSettings,
     EffectiveSettingsResolver,
+    LanguagePreferences,
     PlaybackSettings,
     SettingKey,
+    SettingValue,
+    TrackSelection,
 )
 
 _PRECEDENCE_VALUES: dict[
     SettingKey,
-    tuple[float | bool, float | bool, float | bool, float | bool],
+    tuple[SettingValue, SettingValue, SettingValue, SettingValue],
 ] = {
     SettingKey.SPEED: (1.0, 1.25, 1.5, 2.0),
     SettingKey.PANSCAN: (0.0, 0.25, 0.5, 1.0),
     SettingKey.VOLUME: (100.0, 90.0, 80.0, 70.0),
     SettingKey.MUTE: (False, True, False, True),
     SettingKey.SUBTITLE_VISIBILITY: (True, False, True, False),
+    SettingKey.SUBTITLE_LANGUAGES: (
+        LanguagePreferences(()),
+        LanguagePreferences.parse("en"),
+        LanguagePreferences.parse("tr,en"),
+        LanguagePreferences.parse("es,en"),
+    ),
+    SettingKey.AUDIO_LANGUAGES: (
+        LanguagePreferences(()),
+        LanguagePreferences.parse("en"),
+        LanguagePreferences.parse("es,en"),
+        LanguagePreferences.parse("tr,en"),
+    ),
+    SettingKey.SUBTITLE_TRACK: (
+        TrackSelection.auto(),
+        TrackSelection.specific(1),
+        TrackSelection.off(),
+        TrackSelection.specific(4),
+    ),
+    SettingKey.AUDIO_TRACK: (
+        TrackSelection.auto(),
+        TrackSelection.specific(2),
+        TrackSelection.off(),
+        TrackSelection.specific(5),
+    ),
+    SettingKey.SUBTITLE_DELAY: (0.0, 0.25, -0.5, 1.25),
+    SettingKey.AUDIO_DELAY: (0.0, -0.25, 0.5, -1.25),
 }
 
 
-def _layer(key: SettingKey, value: float | bool) -> PlaybackSettings:
+def _layer(key: SettingKey, value: SettingValue) -> PlaybackSettings:
     return PlaybackSettings(**{key.value: value})
 
 
@@ -111,4 +140,10 @@ def test_deterministic_baseline_contains_every_core_reset_value() -> None:
         volume=100.0,
         mute=False,
         subtitle_visibility=True,
+        subtitle_languages=LanguagePreferences(()),
+        audio_languages=LanguagePreferences(()),
+        subtitle_track=TrackSelection.auto(),
+        audio_track=TrackSelection.auto(),
+        subtitle_delay=0.0,
+        audio_delay=0.0,
     )
