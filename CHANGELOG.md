@@ -6,6 +6,26 @@ corresponding three-part version such as `0.1.0`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-20
+
+### Added
+
+- Embedded mpv video in a stable native Qt host with resize, minimize/restore,
+  and full-screen support.
+- A supervised, shell-free mpv child process with bounded shutdown and one
+  automatic restart after an unexpected exit.
+- A random per-session Windows named-pipe transport using cancellable,
+  overlapped duplex I/O.
+- A line-framed JSON IPC client with request IDs, deadlines, late-reply guards,
+  events, and property observation.
+- Previous, Play/Pause, Stop, Next, absolute seek, duration, and progress
+  controls backed by safe JSON commands.
+- An explicit playback state machine and load generations that prevent stale
+  file events from changing or advancing the current queue item.
+- Path-free English playback errors with Retry and Stop recovery actions.
+- Opt-in real-mpv recovery coverage and a clean-environment release playback
+  smoke test using a synthetic Unicode, leading-hyphen local filename.
+
 ## [0.2.0] - 2026-08-20
 
 ### Added
@@ -48,7 +68,8 @@ behavior is identical to v0.1.
 - Required Windows CI, Dependabot configuration, and a tag-driven pre-release
   workflow with dependency audit, SBOM, checksums, and public-asset smoke test.
 
-[Unreleased]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.2...HEAD
+[Unreleased]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.3...HEAD
+[0.3.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.2...v0.3
 [0.2.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.1.1...v0.2
 [0.1.1]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.1...v0.1.1
 [0.1.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/releases/tag/v0.1

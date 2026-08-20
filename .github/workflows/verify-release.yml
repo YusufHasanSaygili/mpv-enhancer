@@ -32,6 +32,25 @@ jobs:
         with:
           python-version-file: .python-version
 
+      - name: Download pinned official mpv playback test binary
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "mpv-playback-test.zip"
+          $destination = Join-Path $env:RUNNER_TEMP "mpv-playback-test"
+          $url = "https://github.com/mpv-player/mpv/releases/download/git-release/mpv-v0.41.0-dev-gf4d13e1c2-31356187173-x86_64-pc-windows-msvc.zip"
+          $expected = "ecbac93878aaba79cab62105e5186f93701deeacb14b95a3afa70d0369cb1ba9"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Pinned mpv playback-test archive checksum mismatch."
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $executable = Get-ChildItem $destination -Filter mpv.exe -Recurse | Select-Object -First 1
+          if (-not $executable) {
+            throw "Pinned mpv playback-test executable was not found."
+          }
+          "MPV_TEST_EXE=$($executable.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Validate public immutable release
         shell: pwsh
         run: |
@@ -72,7 +91,7 @@ jobs:
           python -m venv build/public-release-smoke
           & build/public-release-smoke/Scripts/python.exe -m pip install --require-hashes --requirement $requirements.FullName
           & build/public-release-smoke/Scripts/python.exe -m pip install --no-deps $wheel.FullName
-          & build/public-release-smoke/Scripts/python.exe -I scripts/release_smoke.py
+          & build/public-release-smoke/Scripts/python.exe -I scripts/release_smoke.py --mpv $env:MPV_TEST_EXE
 
       - name: Record verification summary
         shell: pwsh
@@ -92,6 +111,7 @@ jobs:
             "- SHA-256 verification: PASS",
             "- Fresh Python 3.12 environment install: PASS",
             "- Offscreen 20-file queue drop, selection, reorder, undo, and shell lifecycle: PASS",
+            "- Published wheel embedded local playback with Unicode and leading-hyphen filename: PASS",
             "",
             "## Downloaded assets",
             ""

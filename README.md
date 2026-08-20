@@ -11,23 +11,24 @@ application will use Python, PySide6, and Qt Widgets.
 
 ## Project status
 
-The v0.2 queue slice is available as a public pre-release. The repository
-contains a runnable three-region desktop shell, persistent mpv preferences,
-safe local paths and rotating diagnostics, automated tests, and a Windows CI
-quality gate. The application includes an ordered queue and
-external Explorer file drop with partial rejection of unsupported files. Queue
-items can be reordered by dragging or with `Alt+Up` and `Alt+Down`. Playback and
-per-item settings are planned for later releases. Ctrl selects non-adjacent
-queue items, Shift selects ranges, and Ctrl+A selects the full queue.
+The v0.3 embedded-playback slice is available as a public pre-release. The
+repository contains a runnable three-region desktop shell, persistent mpv
+preferences, safe local paths and rotating diagnostics, automated tests, and a
+Windows CI quality gate. The application includes an ordered queue, Explorer
+file drop, embedded mpv video, basic transport controls, progress, full-screen,
+and recoverable playback failures. Queue items can be reordered by dragging or
+with `Alt+Up` and `Alt+Down`. Per-item settings are planned for a later release.
+Ctrl selects non-adjacent queue items, Shift selects ranges, and Ctrl+A selects
+the full queue.
 Selected items can be removed with Delete, the full queue can be cleared after
 confirmation, and queue edits support Undo and Redo.
 Queue rows provide accessible labels, elide long titles, and show a clear
 override-status placeholder while per-item settings are still in development.
 
-See [CHANGELOG.md](CHANGELOG.md) and the [v0.2 release notes](docs/releases/v0.2.md)
+See [CHANGELOG.md](CHANGELOG.md) and the [v0.3 release notes](docs/releases/v0.3.md)
 for compatibility details, assets, known limitations, and the immutable Slice
-02 fork point. The [v0.1.1 recovery release](docs/releases/v0.1.1.md) remains
-available as the verified first-slice fork point.
+03 fork point. The [v0.2 release](docs/releases/v0.2.md) remains available as
+the verified queue-slice fork point.
 
 ## Contributing
 
@@ -71,8 +72,8 @@ python -m pytest
 The current application opens an English three-region desktop shell. Supported
 local media files can be dropped into the queue while invalid entries from the
 same drop are skipped with a status message. Reordering preserves each item's
-identity and metadata. Playback and per-item settings will be added in later
-releases.
+identity and metadata. Double-click an item or select it and press Play to load
+it in the embedded video host. Per-item settings will be added later.
 
 ## mpv setup
 
