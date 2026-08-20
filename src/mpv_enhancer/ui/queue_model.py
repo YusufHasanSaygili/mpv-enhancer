@@ -134,12 +134,28 @@ class QueueListModel(QAbstractListModel):
             or not data.hasFormat(QUEUE_ITEM_MIME_TYPE)
         ):
             return False
+        move = self.resolve_internal_move(data, row, parent)
+        if move is None:
+            return False
+        source_row, destination_row = move
+        self.move_item(source_row, destination_row)
+        return True
+
+    def resolve_internal_move(
+        self,
+        data: QMimeData,
+        row: int,
+        parent: QModelIndex | QPersistentModelIndex = INVALID_INDEX,
+    ) -> tuple[int, int] | None:
+        """Resolve UUID MIME data and a Qt insertion slot into final row indexes."""
+        if not data.hasFormat(QUEUE_ITEM_MIME_TYPE) or not self._playlist.items:
+            return None
         try:
             encoded_item_id = data.data(QUEUE_ITEM_MIME_TYPE).data()
             item_id = UUID(bytes=bytes(encoded_item_id))
             source_row = self._playlist.index_of(item_id)
         except (KeyError, ValueError):
-            return False
+            return None
 
         insertion_row = parent.row() if row < 0 and parent.isValid() else row
         if insertion_row < 0:
@@ -149,8 +165,21 @@ class QueueListModel(QAbstractListModel):
             insertion_row - 1 if source_row < insertion_row else insertion_row
         )
         destination_row = min(destination_row, len(self._playlist) - 1)
-        self.move_item(source_row, destination_row)
-        return True
+        return source_row, destination_row
+
+    def replace_items(
+        self,
+        items: tuple[QueueItem, ...],
+        current_item_id: UUID | None,
+    ) -> None:
+        """Restore one validated queue snapshot through a model reset."""
+        playlist = Playlist(items)
+        if current_item_id is not None:
+            playlist.index_of(current_item_id)
+        self.beginResetModel()
+        self._playlist = playlist
+        self._current_item_id = current_item_id
+        self.endResetModel()
 
     def insert_item(self, row: int, item: QueueItem) -> None:
         """Insert one domain item with a matching Qt rows notification."""
