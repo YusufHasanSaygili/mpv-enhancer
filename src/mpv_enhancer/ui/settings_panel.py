@@ -80,6 +80,7 @@ class SelectedItemsSettingsPanel(QWidget):
     resetAllRequested = Signal()
     patchRequested = Signal(object)
     resetSettingRequested = Signal(object)
+    resetSettingsRequested = Signal(object)
     presetRequested = Signal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -256,6 +257,40 @@ class SelectedItemsSettingsPanel(QWidget):
         )
         self._add_aspect_ratio_setting(video_layout)
         self._add_video_crop_setting(video_layout)
+        self._add_numeric_setting(
+            video_layout,
+            SettingKey.VIDEO_ZOOM,
+            "Zoom",
+            "videoZoomControl",
+            "Adjust logarithmic video zoom from ¼× (-2.00) to 4× (+2.00).",
+            decimals=2,
+            step=0.1,
+        )
+        self._add_numeric_setting(
+            video_layout,
+            SettingKey.VIDEO_PAN_X,
+            "Pan X",
+            "videoPanXControl",
+            "Move video horizontally from -1.00 to +1.00 of its scaled width.",
+            decimals=2,
+            step=0.05,
+        )
+        self._add_numeric_setting(
+            video_layout,
+            SettingKey.VIDEO_PAN_Y,
+            "Pan Y",
+            "videoPanYControl",
+            "Move video vertically from -1.00 to +1.00 of its scaled height.",
+            decimals=2,
+            step=0.05,
+        )
+        reset_zoom_pan = QPushButton("Reset Zoom and Pan", video_group)
+        reset_zoom_pan.setObjectName("resetZoomPanButton")
+        reset_zoom_pan.setToolTip(
+            "Restore zoom and both pan axes to their inherited values."
+        )
+        reset_zoom_pan.clicked.connect(self._request_zoom_pan_reset)
+        video_layout.addRow(reset_zoom_pan)
         content_layout.addWidget(preset_group)
         content_layout.addWidget(playback_group)
         content_layout.addWidget(track_group)
@@ -589,6 +624,15 @@ class SelectedItemsSettingsPanel(QWidget):
 
     def _request_setting_reset(self, key: SettingKey, _checked: bool = False) -> None:
         self.resetSettingRequested.emit(key)
+
+    def _request_zoom_pan_reset(self, _checked: bool = False) -> None:
+        self.resetSettingsRequested.emit(
+            (
+                SettingKey.VIDEO_ZOOM,
+                SettingKey.VIDEO_PAN_X,
+                SettingKey.VIDEO_PAN_Y,
+            )
+        )
 
     def _preset_changed(self, index: int) -> None:
         preset = _preset_at(index)

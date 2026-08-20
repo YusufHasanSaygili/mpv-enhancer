@@ -188,12 +188,13 @@ def _verify_no_leak_playback_settings() -> None:
         for index, command in enumerate(client.commands)
         if command and command[0] == "loadfile"
     ]
-    managed_count = len(SETTING_SPEC_REGISTRY.specs)
-    if load_indexes != [managed_count * 2, managed_count * 4 + 1]:
-        raise RuntimeError("Effective settings were not applied before every load.")
-    if client.commands[load_indexes[1] - managed_count : load_indexes[1]] != [
+    expected_effective_commands = [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
+        ("set_property", "video-aspect-override", "no"),
+        ("set_property", "video-zoom", 0.0),
+        ("set_property", "video-pan-x", 0.0),
+        ("set_property", "video-pan-y", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -203,7 +204,18 @@ def _verify_no_leak_playback_settings() -> None:
         ("set_property", "aid", "auto"),
         ("set_property", "sub-delay", 0.0),
         ("set_property", "audio-delay", 0.0),
-    ]:
+    ]
+    apply_command_count = len(SETTING_SPEC_REGISTRY.specs) + len(
+        expected_effective_commands
+    )
+    if load_indexes != [apply_command_count, apply_command_count * 2 + 1]:
+        raise RuntimeError("Effective settings were not applied before every load.")
+    if (
+        client.commands[
+            load_indexes[1] - len(expected_effective_commands) : load_indexes[1]
+        ]
+        != expected_effective_commands
+    ):
         raise RuntimeError("Managed settings leaked into the next episode.")
 
 

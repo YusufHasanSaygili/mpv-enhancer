@@ -149,6 +149,9 @@ class MainWindow(QMainWindow):
         )
         self.settings_panel.patchRequested.connect(self._apply_settings_patch)
         self.settings_panel.resetSettingRequested.connect(self._reset_selected_setting)
+        self.settings_panel.resetSettingsRequested.connect(
+            self._reset_selected_settings
+        )
         self.settings_panel.resetAllRequested.connect(self._reset_all_selected_settings)
         self.settings_panel.applyRequested.connect(self._apply_selected_settings)
         self.settings_panel.presetRequested.connect(self._apply_settings_preset)
@@ -249,6 +252,15 @@ class MainWindow(QMainWindow):
             reset_selection_setting(self.queue_model.items, selected_ids, key),
             selected_ids,
         )
+
+    def _reset_selected_settings(self, keys: tuple[SettingKey, ...]) -> None:
+        selected_ids = self.queue_view.selected_item_ids
+        if not selected_ids:
+            return
+        updated = self.queue_model.items
+        for key in keys:
+            updated = reset_selection_setting(updated, selected_ids, key)
+        self._replace_selected_overrides(updated, selected_ids)
 
     def _reset_all_selected_settings(self) -> None:
         selected_ids = self.queue_view.selected_item_ids
