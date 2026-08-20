@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from mpv_enhancer.domain.models import QueueItem
+from mpv_enhancer.domain.presets import STARTER_PRESETS, SettingsPreset
 from mpv_enhancer.domain.selection_settings import (
     SelectedSettingState,
     SelectedSettingValue,
@@ -55,6 +56,7 @@ class SelectedItemsSettingsPanel(QWidget):
     resetAllRequested = Signal()
     patchRequested = Signal(object)
     resetSettingRequested = Signal(object)
+    presetRequested = Signal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -81,6 +83,29 @@ class SelectedItemsSettingsPanel(QWidget):
         content_layout = QVBoxLayout(self.settings_content)
         content_layout.setContentsMargins(4, 4, 4, 4)
         content_layout.setSpacing(10)
+        preset_group = _settings_group("Presets", "presetSettingsGroup")
+        preset_layout = QVBoxLayout(preset_group)
+        self.preset_control = QComboBox(preset_group)
+        self.preset_control.setObjectName("presetControl")
+        self.preset_control.setAccessibleName("Settings preset")
+        self.preset_control.setToolTip(
+            "Choose a reviewed preset and inspect every change before applying it."
+        )
+        self.preset_control.addItems(tuple(preset.label for preset in STARTER_PRESETS))
+        preset_layout.addWidget(self.preset_control)
+        self.preset_preview_label = QLabel(preset_group)
+        self.preset_preview_label.setObjectName("presetPreviewLabel")
+        self.preset_preview_label.setAccessibleName("Preset preview")
+        self.preset_preview_label.setWordWrap(True)
+        preset_layout.addWidget(self.preset_preview_label)
+        self.apply_preset_button = QPushButton("Apply Preset", preset_group)
+        self.apply_preset_button.setObjectName("applyPresetButton")
+        self.apply_preset_button.setToolTip("Apply every change shown in the preview.")
+        preset_layout.addWidget(self.apply_preset_button)
+        self.preset_control.currentIndexChanged.connect(self._preset_changed)
+        self.apply_preset_button.clicked.connect(self._request_preset)
+        self._preset_changed(0)
+
         playback_group = _settings_group("Playback", "playbackSettingsGroup")
         playback_layout = QFormLayout(playback_group)
         self._add_numeric_setting(
@@ -132,6 +157,7 @@ class SelectedItemsSettingsPanel(QWidget):
             decimals=2,
             step=0.05,
         )
+        content_layout.addWidget(preset_group)
         content_layout.addWidget(playback_group)
         content_layout.addWidget(track_group)
         content_layout.addWidget(video_group)
@@ -231,6 +257,13 @@ class SelectedItemsSettingsPanel(QWidget):
     def _request_setting_reset(self, key: SettingKey, _checked: bool = False) -> None:
         self.resetSettingRequested.emit(key)
 
+    def _preset_changed(self, index: int) -> None:
+        preset = _preset_at(index)
+        self.preset_preview_label.setText(preset.preview_text)
+
+    def _request_preset(self, _checked: bool = False) -> None:
+        self.presetRequested.emit(_preset_at(self.preset_control.currentIndex()))
+
     def set_selected_items(self, selected_items: tuple[QueueItem, ...]) -> None:
         """Bind summary, enabled state, and mixed adapters to one selection."""
         count = len(selected_items)
@@ -282,3 +315,9 @@ def _settings_group(title: str, object_name: str) -> QGroupBox:
     group = QGroupBox(title)
     group.setObjectName(object_name)
     return group
+
+
+def _preset_at(index: int) -> SettingsPreset:
+    if not 0 <= index < len(STARTER_PRESETS):
+        raise IndexError("Settings preset index is out of range.")
+    return STARTER_PRESETS[index]

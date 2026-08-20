@@ -83,12 +83,18 @@ class QueueListModel(QAbstractListModel):
         if role == int(QueueRole.IsCurrent):
             return item.item_id == self._current_item_id
         if role == int(QueueRole.OverrideSummary):
-            return "No overrides"
+            return override_summary(item.overrides)
         if role == int(Qt.ItemDataRole.AccessibleTextRole):
             return item.display_title
         if role == int(Qt.ItemDataRole.AccessibleDescriptionRole):
             current = "Current item. " if item.item_id == self._current_item_id else ""
-            return f"{current}No playback overrides."
+            summary = override_summary(item.overrides)
+            override_description = (
+                "No playback overrides."
+                if summary == "No overrides"
+                else f"Playback overrides: {summary}."
+            )
+            return f"{current}{override_description}"
         return None
 
     def roleNames(self) -> dict[int, QByteArray]:
@@ -255,3 +261,21 @@ class QueueListModel(QAbstractListModel):
     def _emit_current_changed(self, row: int) -> None:
         index = self.index(row, 0)
         self.dataChanged.emit(index, index, [int(QueueRole.IsCurrent)])
+
+
+def override_summary(settings: PlaybackSettings) -> str:
+    """Return compact English indicators in stable registry display order."""
+    badges: list[str] = []
+    if settings.speed is not None:
+        badges.append(f"{settings.speed:g}×")
+    if settings.panscan is not None:
+        badges.append(
+            "Fill" if settings.panscan == 1.0 else f"Pan {settings.panscan:g}"
+        )
+    if settings.volume is not None:
+        badges.append(f"{settings.volume:g}%")
+    if settings.mute is not None:
+        badges.append("Muted" if settings.mute else "Unmuted")
+    if settings.subtitle_visibility is not None:
+        badges.append("Subs On" if settings.subtitle_visibility else "Subs Off")
+    return " · ".join(badges) if badges else "No overrides"

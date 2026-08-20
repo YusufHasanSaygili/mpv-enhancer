@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from mpv_enhancer.domain.models import QueueItem
+from mpv_enhancer.domain.presets import SettingsPreset
 from mpv_enhancer.domain.selection_settings import (
     SettingPatch,
     apply_selection_patch,
@@ -150,6 +151,7 @@ class MainWindow(QMainWindow):
         self.settings_panel.resetSettingRequested.connect(self._reset_selected_setting)
         self.settings_panel.resetAllRequested.connect(self._reset_all_selected_settings)
         self.settings_panel.applyRequested.connect(self._apply_selected_settings)
+        self.settings_panel.presetRequested.connect(self._apply_settings_preset)
         self._settings_selection_changed(self.queue_view.selection_summary)
 
         queue_menu = self.menuBar().addMenu("Queue")
@@ -223,6 +225,21 @@ class MainWindow(QMainWindow):
             apply_selection_patch(self.queue_model.items, selected_ids, patch),
             selected_ids,
         )
+
+    def _apply_settings_preset(self, preset: SettingsPreset) -> None:
+        selected_ids = self.queue_view.selected_item_ids
+        if not selected_ids:
+            return
+        if preset.reset_all:
+            updated = reset_all_selection_overrides(
+                self.queue_model.items,
+                selected_ids,
+            )
+        else:
+            updated = self.queue_model.items
+            for patch in preset.patches:
+                updated = apply_selection_patch(updated, selected_ids, patch)
+        self._replace_selected_overrides(updated, selected_ids)
 
     def _reset_selected_setting(self, key: SettingKey) -> None:
         selected_ids = self.queue_view.selected_item_ids
