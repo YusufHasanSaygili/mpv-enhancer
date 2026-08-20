@@ -5,7 +5,11 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
 
-from mpv_enhancer.infrastructure.mpv.json_ipc import MpvIpcCallbacks, MpvIpcClient
+from mpv_enhancer.infrastructure.mpv.json_ipc import (
+    MpvIpcCallbacks,
+    MpvIpcClient,
+    MpvIpcEvent,
+)
 from mpv_enhancer.infrastructure.mpv.pipe_transport import (
     NamedPipeCallbacks,
     NamedPipeTransport,
@@ -53,7 +57,6 @@ def build_embedded_mpv_arguments(host_hwnd: int, pipe_name: str) -> tuple[str, .
         "--no-config",
         "--idle=yes",
         "--force-window=yes",
-        "--keep-open=yes",
         "--input-vo-keyboard=no",
         "--input-default-bindings=no",
         "--osc=no",
@@ -92,7 +95,10 @@ class EmbeddedMpvSession:
         self._transport = factory(callbacks)
         self._client = MpvIpcClient(
             send=self._transport.send,
-            callbacks=MpvIpcCallbacks(protocol_error=self._protocol_failed),
+            callbacks=MpvIpcCallbacks(
+                event_received=self._playback_event,
+                protocol_error=self._protocol_failed,
+            ),
         )
         self._playback_adapter = MpvJsonPlaybackAdapter(self._client)
         self._started = False
@@ -156,6 +162,9 @@ class EmbeddedMpvSession:
 
     def _protocol_failed(self, _message: str) -> None:
         self._last_error = "mpv returned invalid IPC data."
+
+    def _playback_event(self, event: MpvIpcEvent) -> None:
+        self._playback_adapter.handle_event(event)
 
 
 def _create_transport(callbacks: NamedPipeCallbacks) -> PipeTransport:

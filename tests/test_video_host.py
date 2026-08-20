@@ -15,6 +15,7 @@ from mpv_enhancer.infrastructure.mpv.embedded import (
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.pipe_transport import NamedPipeCallbacks
+from mpv_enhancer.infrastructure.mpv.playback import PlaybackEvent
 from mpv_enhancer.ui.main_window import MainWindow
 from mpv_enhancer.ui.video_host import VideoHost
 
@@ -73,10 +74,11 @@ class NoopPlaybackAdapter:
     def begin_observing(
         self,
         _listener: Callable[[str, JsonValue], None],
+        _event_listener: Callable[[PlaybackEvent], None],
     ) -> None:
         pass
 
-    def load_file(self, _path: Path) -> None:
+    def load_file(self, _path: Path, _generation: int) -> None:
         pass
 
     def set_paused(self, _paused: bool) -> None:
