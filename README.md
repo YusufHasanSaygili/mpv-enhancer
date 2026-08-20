@@ -11,24 +11,26 @@ application will use Python, PySide6, and Qt Widgets.
 
 ## Project status
 
-The v0.3 embedded-playback slice is available as a public pre-release. The
+The v0.4 per-item settings slice is available as a public pre-release. The
 repository contains a runnable three-region desktop shell, persistent mpv
 preferences, safe local paths and rotating diagnostics, automated tests, and a
 Windows CI quality gate. The application includes an ordered queue, Explorer
 file drop, embedded mpv video, basic transport controls, progress, full-screen,
 and recoverable playback failures. Queue items can be reordered by dragging or
-with `Alt+Up` and `Alt+Down`. Per-item settings are planned for a later release.
-Ctrl selects non-adjacent queue items, Shift selects ranges, and Ctrl+A selects
-the full queue.
+with `Alt+Up` and `Alt+Down`. Selected items can receive validated speed,
+pan-and-scan, volume, mute, and subtitle-visibility overrides with inherited,
+explicit, and mixed states. Ctrl selects non-adjacent queue items, Shift
+selects ranges, and Ctrl+A selects the full queue.
 Selected items can be removed with Delete, the full queue can be cleared after
 confirmation, and queue edits support Undo and Redo.
-Queue rows provide accessible labels, elide long titles, and show a clear
-override-status placeholder while per-item settings are still in development.
+Queue rows provide accessible labels, elide long titles, and show compact
+override badges. Starter presets cover reset-to-default, 1.2× playback,
+fill-display, and subtitle visibility.
 
-See [CHANGELOG.md](CHANGELOG.md) and the [v0.3 release notes](docs/releases/v0.3.md)
+See [CHANGELOG.md](CHANGELOG.md) and the [v0.4 release notes](docs/releases/v0.4.md)
 for compatibility details, assets, known limitations, and the immutable Slice
-03 fork point. The [v0.2 release](docs/releases/v0.2.md) remains available as
-the verified queue-slice fork point.
+04 fork point. The [v0.3 release](docs/releases/v0.3.md) remains available as
+the verified embedded-playback fork point.
 
 ## Contributing
 
@@ -73,7 +75,8 @@ The current application opens an English three-region desktop shell. Supported
 local media files can be dropped into the queue while invalid entries from the
 same drop are skipped with a status message. Reordering preserves each item's
 identity and metadata. Double-click an item or select it and press Play to load
-it in the embedded video host. Per-item settings will be added later.
+it in the embedded video host. Use the left panel to edit selected queue items;
+changes to the current item are applied live when supported by mpv.
 
 ## mpv setup
 
