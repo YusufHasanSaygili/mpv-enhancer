@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QPushButton, QSlider
 
 from mpv_enhancer.domain.models import Playlist, QueueItem
+from mpv_enhancer.domain.settings import EffectivePlaybackSettings
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue, MpvIpcEvent
 from mpv_enhancer.infrastructure.mpv.playback import (
     MpvJsonPlaybackAdapter,
@@ -28,6 +29,7 @@ class FakePlaybackAdapter:
         self.paused: list[bool] = []
         self.seeks: list[float] = []
         self.stop_calls = 0
+        self.settings: list[EffectivePlaybackSettings] = []
         self.listener: Callable[[str, JsonValue], None] | None = None
         self.event_listener: Callable[[PlaybackEvent], None] | None = None
 
@@ -42,6 +44,9 @@ class FakePlaybackAdapter:
     def load_file(self, path: Path, generation: int) -> None:
         self.loaded.append(path)
         self.generations.append(generation)
+
+    def apply_settings(self, settings: EffectivePlaybackSettings) -> None:
+        self.settings.append(settings)
 
     def set_paused(self, paused: bool) -> None:
         self.paused.append(paused)

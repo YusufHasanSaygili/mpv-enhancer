@@ -14,6 +14,7 @@ from PySide6.QtCore import (
 )
 
 from mpv_enhancer.domain.models import Playlist, QueueItem
+from mpv_enhancer.domain.settings import PlaybackSettings
 
 QUEUE_ITEM_MIME_TYPE = "application/x-mpv-enhancer-queue-item-uuid"
 
@@ -48,6 +49,11 @@ class QueueListModel(QAbstractListModel):
     def current_item_id(self) -> UUID | None:
         """Return the UUID represented by the current-item role."""
         return self._current_item_id
+
+    @property
+    def playlist_defaults(self) -> PlaybackSettings:
+        """Return the playlist settings layer used for effective playback."""
+        return self._playlist.defaults
 
     def rowCount(
         self,
@@ -182,7 +188,7 @@ class QueueListModel(QAbstractListModel):
         current_item_id: UUID | None,
     ) -> None:
         """Restore one validated queue snapshot through a model reset."""
-        playlist = Playlist(items)
+        playlist = Playlist(items, defaults=self._playlist.defaults)
         if current_item_id is not None:
             playlist.index_of(current_item_id)
         self.beginResetModel()

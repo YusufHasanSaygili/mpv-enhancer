@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QLabel, QMainWindow
 
+from mpv_enhancer.domain.settings import EffectivePlaybackSettings
 from mpv_enhancer.infrastructure.mpv.discovery import (
     MpvDiagnostics,
     MpvDiagnosticsStatus,
@@ -95,6 +96,9 @@ class NoopPlaybackAdapter:
         pass
 
     def load_file(self, _path: Path, _generation: int) -> None:
+        pass
+
+    def apply_settings(self, _settings: EffectivePlaybackSettings) -> None:
         pass
 
     def set_paused(self, _paused: bool) -> None:

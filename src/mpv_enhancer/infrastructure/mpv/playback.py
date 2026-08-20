@@ -9,7 +9,9 @@ from typing import Protocol
 
 from PySide6.QtCore import QObject, Signal
 
+from mpv_enhancer.domain.settings import EffectivePlaybackSettings
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue, MpvIpcEvent
+from mpv_enhancer.infrastructure.mpv.settings_adapter import MpvSettingsAdapter
 
 PlaybackPropertyListener = Callable[[str, JsonValue], None]
 
@@ -66,6 +68,8 @@ class PlaybackAdapter(Protocol):
 
     def load_file(self, path: Path, generation: int) -> None: ...
 
+    def apply_settings(self, settings: EffectivePlaybackSettings) -> None: ...
+
     def set_paused(self, paused: bool) -> None: ...
 
     def seek_absolute(self, seconds: float) -> None: ...
@@ -86,6 +90,7 @@ class MpvJsonPlaybackAdapter(QObject):
         self._pending_generations: deque[int] = deque()
         self._entry_generations: dict[int, int] = {}
         self._loading_entries: deque[int] = deque()
+        self._settings_adapter = MpvSettingsAdapter(client)
 
     def begin_observing(
         self,
@@ -125,6 +130,10 @@ class MpvJsonPlaybackAdapter(QObject):
             ):
                 self._pending_generations.pop()
             raise
+
+    def apply_settings(self, settings: EffectivePlaybackSettings) -> None:
+        """Reset and apply the complete allowlisted settings value."""
+        self._settings_adapter.apply(settings)
 
     def set_paused(self, paused: bool) -> None:
         self._client.request(("set_property", "pause", paused))

@@ -6,6 +6,13 @@ from enum import StrEnum
 
 from PySide6.QtCore import QObject, Signal
 
+from mpv_enhancer.domain.models import QueueItem
+from mpv_enhancer.domain.settings import (
+    EMPTY_PLAYBACK_SETTINGS,
+    EffectivePlaybackSettings,
+    EffectiveSettingsResolver,
+    PlaybackSettings,
+)
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.playback import (
     PlaybackAdapter,
@@ -50,12 +57,21 @@ class PlaybackController(QObject):
         model: QueueListModel,
         adapter: PlaybackAdapter,
         parent: QObject | None = None,
+        *,
+        app_defaults: PlaybackSettings = EMPTY_PLAYBACK_SETTINGS,
+        settings_resolver: EffectiveSettingsResolver | None = None,
     ) -> None:
         super().__init__(parent)
         self._model = model
         self._adapter = adapter
         self._state = PlaybackState()
         self._generation = 0
+        self._app_defaults = app_defaults
+        self._settings_resolver = (
+            EffectiveSettingsResolver()
+            if settings_resolver is None
+            else settings_resolver
+        )
         self._adapter.begin_observing(
             self._property_changed,
             self._playback_event,
@@ -71,6 +87,7 @@ class PlaybackController(QObject):
             return False
         item = self._model.items[row]
         self._generation += 1
+        self._adapter.apply_settings(self._effective_settings(item))
         self._adapter.load_file(item.source_path, self._generation)
         self._model.set_current_item(item.item_id)
         self._set_state(
@@ -80,6 +97,27 @@ class PlaybackController(QObject):
             )
         )
         return True
+
+    def refresh_current_settings(self) -> bool:
+        """Apply the current item's latest effective settings without reloading."""
+        current_id = self._model.current_item_id
+        if current_id is None:
+            return False
+        item = next(
+            (item for item in self._model.items if item.item_id == current_id),
+            None,
+        )
+        if item is None:
+            return False
+        self._adapter.apply_settings(self._effective_settings(item))
+        return True
+
+    def _effective_settings(self, item: QueueItem) -> EffectivePlaybackSettings:
+        return self._settings_resolver.resolve(
+            app_defaults=self._app_defaults,
+            playlist_defaults=self._model.playlist_defaults,
+            item_overrides=item.overrides,
+        )
 
     def toggle_play_pause(self, preferred_row: int | None = None) -> bool:
         """Toggle pause, loading a preferred or first row when idle."""
