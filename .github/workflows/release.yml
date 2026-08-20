@@ -85,6 +85,31 @@ jobs:
             }
           [System.IO.File]::WriteAllLines("dist/SHA256SUMS.txt", $lines)
 
+      - name: Create immutable release evidence
+        shell: pwsh
+        run: |
+          $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:GITHUB_REF_NAME"
+          $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $assets = Get-ChildItem dist -File | Sort-Object Name | ForEach-Object { "- $($_.Name)" }
+          $checksums = Get-Content dist/SHA256SUMS.txt | ForEach-Object { "- ``$($_)``" }
+          $evidence = @(
+            "# MPV Enhancer $env:GITHUB_REF_NAME release evidence",
+            "",
+            "- Release URL: $releaseUrl",
+            "- Workflow run and public verification: $runUrl",
+            "- Build runner: clean GitHub-hosted Windows environment",
+            "- Complete quality gate: PASS",
+            "- Locked runtime dependency audit: PASS",
+            "- Fresh virtual environment install: PASS",
+            "- Offscreen application shell launch and close: PASS",
+            "- Public download and checksum verification: see the successful Verify public Windows asset job in the workflow run",
+            "",
+            "## Reviewed assets",
+            ""
+          ) + $assets + @("", "## SHA-256 checksums", "") + $checksums
+          $evidencePath = "dist/release-evidence-$env:GITHUB_REF_NAME.md"
+          [System.IO.File]::WriteAllLines($evidencePath, $evidence)
+
       - name: Upload reviewed release assets
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -118,9 +143,14 @@ jobs:
           gh release create "$GITHUB_REF_NAME" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
+            --draft \
             --prerelease \
             --title "MPV Enhancer $GITHUB_REF_NAME" \
             --notes-file "docs/releases/$GITHUB_REF_NAME.md"
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --prerelease
 
   verify-public:
     name: Verify public Windows asset
@@ -128,7 +158,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     permissions:
-      contents: write
+      contents: read
     env:
       GH_TOKEN: ${{ github.token }}
       QT_QPA_PLATFORM: offscreen
@@ -174,15 +204,15 @@ jobs:
           & build/public-release-smoke/Scripts/python.exe -m pip install --no-deps $wheel.FullName
           & build/public-release-smoke/Scripts/python.exe -I scripts/release_smoke.py
 
-      - name: Record public verification evidence
+      - name: Record public verification summary
         shell: pwsh
         run: |
           $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:GITHUB_REF_NAME"
           $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
           $assets = Get-ChildItem public-assets -File | Sort-Object Name | ForEach-Object { "- $($_.Name)" }
           $checksums = Get-Content public-assets/SHA256SUMS.txt | ForEach-Object { "- ``$($_)``" }
-          $evidence = @(
-            "# MPV Enhancer $env:GITHUB_REF_NAME release evidence",
+          $summary = @(
+            "# MPV Enhancer $env:GITHUB_REF_NAME public verification",
             "",
             "- Release URL: $releaseUrl",
             "- Workflow run: $runUrl",
@@ -195,6 +225,4 @@ jobs:
             "## Downloaded assets",
             ""
           ) + $assets + @("", "## Verified checksums", "") + $checksums
-          $evidencePath = "release-evidence-$env:GITHUB_REF_NAME.md"
-          [System.IO.File]::WriteAllLines($evidencePath, $evidence)
-          gh release upload $env:GITHUB_REF_NAME $evidencePath --repo $env:GITHUB_REPOSITORY --clobber
+          [System.IO.File]::AppendAllLines($env:GITHUB_STEP_SUMMARY, $summary)

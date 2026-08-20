@@ -39,6 +39,9 @@ def test_tag_workflow_builds_and_verifies_public_release_assets() -> None:
         "uv export --format cyclonedx1.5",
         "uv build --wheel",
         "gh release create",
+        "--draft",
+        "gh release edit",
+        "--draft=false",
         "--prerelease",
         "gh release download",
         "Get-FileHash",
@@ -47,6 +50,7 @@ def test_tag_workflow_builds_and_verifies_public_release_assets() -> None:
     for fragment in required_fragments:
         assert fragment in workflow
 
+    assert "gh release upload" not in workflow
     assert (REPOSITORY_ROOT / "scripts" / "release_smoke.py").is_file()
 
 
