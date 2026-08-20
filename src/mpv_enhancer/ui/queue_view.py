@@ -1,4 +1,4 @@
-"""Queue view support for external Explorer file drops."""
+"""Accessible queue presentation, selection, drop, and reorder behavior."""
 
 from collections.abc import Callable
 from uuid import UUID
@@ -9,6 +9,7 @@ from PySide6.QtCore import (
     QPersistentModelIndex,
     QPoint,
     QRect,
+    QSize,
     Qt,
     Signal,
 )
@@ -18,13 +19,19 @@ from PySide6.QtGui import (
     QDragLeaveEvent,
     QDragMoveEvent,
     QDropEvent,
+    QFont,
+    QFontMetrics,
+    QKeyEvent,
     QKeySequence,
     QPainter,
     QPaintEvent,
     QPen,
+    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
+    QLabel,
     QListView,
     QStyle,
     QStyledItemDelegate,
@@ -34,7 +41,11 @@ from PySide6.QtWidgets import (
 
 from mpv_enhancer.domain.models import QueueItem
 from mpv_enhancer.ui.file_drop import ExternalFileDrop, parse_external_file_drop
-from mpv_enhancer.ui.queue_model import QUEUE_ITEM_MIME_TYPE, QueueListModel
+from mpv_enhancer.ui.queue_model import (
+    QUEUE_ITEM_MIME_TYPE,
+    QueueListModel,
+    QueueRole,
+)
 
 
 class QueueDragHandleDelegate(QStyledItemDelegate):
@@ -46,13 +57,65 @@ class QueueDragHandleDelegate(QStyledItemDelegate):
         option: QStyleOptionViewItem,
         index: QModelIndex | QPersistentModelIndex,
     ) -> None:
-        text_option = QStyleOptionViewItem(option)
-        text_option.rect = text_option.rect.adjusted(24, 0, 0, 0)
-        super().paint(painter, text_option, index)
+        background_option = QStyleOptionViewItem(option)
+        self.initStyleOption(background_option, index)
+        background_option.text = ""
+        style = (
+            option.widget.style() if option.widget is not None else QApplication.style()
+        )
+        style.drawControl(
+            QStyle.ControlElement.CE_ItemViewItem,
+            background_option,
+            painter,
+            option.widget,
+        )
+
+        content_rect = option.rect.adjusted(28, 4, -8, -4)
+        title = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        override_summary = str(index.data(QueueRole.OverrideSummary) or "")
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        title_color = (
+            option.palette.highlightedText().color()
+            if selected
+            else option.palette.text().color()
+        )
+        secondary_color = option.palette.highlightedText().color()
+        if not selected:
+            secondary_color = option.palette.text().color()
+            secondary_color.setAlpha(170)
+
+        painter.save()
+        painter.setPen(title_color)
+        title_font = QFont(option.font)
+        title_font.setBold(bool(index.data(QueueRole.IsCurrent)))
+        painter.setFont(title_font)
+        painter.drawText(
+            content_rect.left(),
+            content_rect.top(),
+            content_rect.width(),
+            content_rect.height() // 2,
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            self.elided_title(title, title_font, content_rect.width()),
+        )
+        painter.setPen(secondary_color)
+        painter.setFont(option.font)
+        painter.drawText(
+            content_rect.left(),
+            content_rect.center().y(),
+            content_rect.width(),
+            content_rect.height() // 2,
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            override_summary,
+        )
+        painter.restore()
 
         handle = QRect(option.rect.left() + 6, option.rect.center().y() - 5, 12, 10)
         painter.save()
-        painter.setPen(QPen(option.palette.mid().color(), 2))
+        handle_color = option.palette.highlightedText().color()
+        if not selected:
+            handle_color = option.palette.text().color()
+            handle_color.setAlpha(150)
+        painter.setPen(QPen(handle_color, 2))
         for offset in (0, 5, 10):
             painter.drawLine(
                 handle.left(),
@@ -62,12 +125,30 @@ class QueueDragHandleDelegate(QStyledItemDelegate):
             )
         painter.restore()
 
+    def elided_title(self, title: str, font: QFont, width: int) -> str:
+        """Elide one title using the same right-edge policy as the row painter."""
+        return QFontMetrics(font).elidedText(
+            title,
+            Qt.TextElideMode.ElideRight,
+            width,
+        )
+
+    def sizeHint(
+        self,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> QSize:
+        """Reserve enough height for a title and override-summary line."""
+        base_size = super().sizeHint(option, index)
+        return QSize(0, max(44, base_size.height()))
+
 
 class QueueDropListView(QListView):
     """Accept supported local media URLs and insert them at the shown row."""
 
     dropMessage = Signal(str)
     selectionSummaryChanged = Signal(str)
+    removeRequested = Signal()
 
     def __init__(
         self,
@@ -80,6 +161,10 @@ class QueueDropListView(QListView):
         self._move_handler: Callable[[int, int], None] | None = None
         self.setObjectName("queueList")
         self.setAccessibleName("Playback queue")
+        self.setAccessibleDescription(
+            "Ordered media queue. Use Ctrl and Shift to select, Delete to remove, "
+            "and Alt plus Up or Down to reorder."
+        )
         self.setModel(model)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -91,14 +176,33 @@ class QueueDropListView(QListView):
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.setItemDelegate(QueueDragHandleDelegate(self))
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setTextElideMode(Qt.TextElideMode.ElideRight)
+
+        self.empty_state_label = QLabel(
+            "Drop supported media files here to build the queue.",
+            self.viewport(),
+        )
+        self.empty_state_label.setObjectName("queueEmptyState")
+        self.empty_state_label.setAccessibleName("Empty queue instructions")
+        self.empty_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_state_label.setWordWrap(True)
+        self.empty_state_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
+        model.rowsInserted.connect(self._update_empty_state)
+        model.rowsRemoved.connect(self._update_empty_state)
+        model.modelReset.connect(self._update_empty_state)
+        self._update_empty_state()
 
         move_up_action = QAction("Move queue item up", self)
+        move_up_action.setObjectName("moveQueueItemUpAction")
         move_up_action.setShortcut(QKeySequence("Alt+Up"))
         move_up_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         move_up_action.triggered.connect(self.move_current_up)
         self.addAction(move_up_action)
 
         move_down_action = QAction("Move queue item down", self)
+        move_down_action.setObjectName("moveQueueItemDownAction")
         move_down_action.setShortcut(QKeySequence("Alt+Down"))
         move_down_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         move_down_action.triggered.connect(self.move_current_down)
@@ -224,6 +328,25 @@ class QueueDropListView(QListView):
         """Move the current row down once, preserving its UUID and metadata."""
         self._move_current_by(1)
 
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Expose destructive queue editing without requiring pointer input."""
+        if event.key() == Qt.Key.Key_Delete and not event.modifiers():
+            self.removeRequested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Keep empty instructions centered inside the usable queue viewport."""
+        super().resizeEvent(event)
+        margin = 24
+        self.empty_state_label.setGeometry(
+            margin,
+            0,
+            max(0, self.viewport().width() - margin * 2),
+            self.viewport().height(),
+        )
+
     def paintEvent(self, event: QPaintEvent) -> None:
         """Paint a high-contrast horizontal marker at the pending insert row."""
         super().paintEvent(event)
@@ -296,6 +419,9 @@ class QueueDropListView(QListView):
         _deselected: QItemSelection,
     ) -> None:
         self.selectionSummaryChanged.emit(self.selection_summary)
+
+    def _update_empty_state(self, *_args: object) -> None:
+        self.empty_state_label.setVisible(self._queue_model.rowCount() == 0)
 
 
 def _drop_result_message(result: ExternalFileDrop) -> str:

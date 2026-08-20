@@ -25,6 +25,7 @@ class QueueRole(IntEnum):
     SourcePath = int(Qt.ItemDataRole.UserRole) + 2
     DisplayTitle = int(Qt.ItemDataRole.UserRole) + 3
     IsCurrent = int(Qt.ItemDataRole.UserRole) + 4
+    OverrideSummary = int(Qt.ItemDataRole.UserRole) + 5
 
 
 INVALID_INDEX = QModelIndex()
@@ -75,6 +76,13 @@ class QueueListModel(QAbstractListModel):
             return str(item.source_path)
         if role == int(QueueRole.IsCurrent):
             return item.item_id == self._current_item_id
+        if role == int(QueueRole.OverrideSummary):
+            return "No overrides"
+        if role == int(Qt.ItemDataRole.AccessibleTextRole):
+            return item.display_title
+        if role == int(Qt.ItemDataRole.AccessibleDescriptionRole):
+            current = "Current item. " if item.item_id == self._current_item_id else ""
+            return f"{current}No playback overrides."
         return None
 
     def roleNames(self) -> dict[int, QByteArray]:
@@ -84,6 +92,7 @@ class QueueListModel(QAbstractListModel):
             int(QueueRole.SourcePath): QByteArray(b"sourcePath"),
             int(QueueRole.DisplayTitle): QByteArray(b"displayTitle"),
             int(QueueRole.IsCurrent): QByteArray(b"isCurrent"),
+            int(QueueRole.OverrideSummary): QByteArray(b"overrideSummary"),
         }
 
     def flags(

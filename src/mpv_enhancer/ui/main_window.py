@@ -1,4 +1,4 @@
-"""Main application window and first-slice layout placeholders."""
+"""Main application window and three-region desktop layout."""
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
@@ -71,6 +71,7 @@ class MainWindow(QMainWindow):
         if selection_summary_label is None:
             raise RuntimeError("The selection summary label could not be created.")
         self.selection_summary_label = selection_summary_label
+        self.selection_summary_label.setAccessibleName("Selection summary")
         self.selection_summary_label.setText(self.queue_view.selection_summary)
         self.queue_view.selectionSummaryChanged.connect(
             self.selection_summary_label.setText
@@ -78,17 +79,24 @@ class MainWindow(QMainWindow):
 
         queue_menu = self.menuBar().addMenu("Queue")
         remove_action = QAction("Remove Selected", self)
+        remove_action.setObjectName("removeSelectedQueueItemsAction")
         remove_action.setShortcut("Delete")
+        remove_action.setStatusTip("Remove the selected queue items")
         remove_action.triggered.connect(self.request_remove_selected)
+        self.queue_view.removeRequested.connect(self.request_remove_selected)
         queue_menu.addAction(remove_action)
         clear_action = QAction("Clear Queue...", self)
+        clear_action.setObjectName("clearQueueAction")
+        clear_action.setStatusTip("Clear every item after confirmation")
         clear_action.triggered.connect(self.request_clear_queue)
         queue_menu.addAction(clear_action)
         queue_menu.addSeparator()
         undo_action = self.queue_controller.undo_stack.createUndoAction(self)
+        undo_action.setObjectName("undoQueueAction")
         undo_action.setShortcuts(QKeySequence.StandardKey.Undo)
         queue_menu.addAction(undo_action)
         redo_action = self.queue_controller.undo_stack.createRedoAction(self)
+        redo_action.setObjectName("redoQueueAction")
         redo_action.setShortcuts(QKeySequence.StandardKey.Redo)
         queue_menu.addAction(redo_action)
         queue = self._create_region(
