@@ -1,6 +1,9 @@
 """Queue view support for external Explorer file drops."""
 
+from uuid import UUID
+
 from PySide6.QtCore import (
+    QItemSelection,
     QModelIndex,
     QPersistentModelIndex,
     QPoint,
@@ -63,6 +66,7 @@ class QueueDropListView(QListView):
     """Accept supported local media URLs and insert them at the shown row."""
 
     dropMessage = Signal(str)
+    selectionSummaryChanged = Signal(str)
 
     def __init__(
         self,
@@ -75,6 +79,10 @@ class QueueDropListView(QListView):
         self.setObjectName("queueList")
         self.setAccessibleName("Playback queue")
         self.setModel(model)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.selectionModel().selectionChanged.connect(self._selection_changed)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
         self.setDragEnabled(True)
@@ -98,6 +106,22 @@ class QueueDropListView(QListView):
     def insertion_row(self) -> int | None:
         """Return the row currently represented by the insertion indicator."""
         return self._insertion_row
+
+    @property
+    def selected_item_ids(self) -> tuple[UUID, ...]:
+        """Return selected UUIDs in current queue order."""
+        rows = sorted(index.row() for index in self.selectionModel().selectedRows())
+        return tuple(self._queue_model.items[row].item_id for row in rows)
+
+    @property
+    def selection_summary(self) -> str:
+        """Return an English count suitable for the selected-items panel."""
+        count = len(self.selected_item_ids)
+        if count == 0:
+            return "No queue items selected"
+        if count == 1:
+            return "1 queue item selected"
+        return f"{count} queue items selected"
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         """Accept URL drags so invalid entries can receive a clear result."""
@@ -231,6 +255,13 @@ class QueueDropListView(QListView):
             return
         self._queue_model.move_item(current.row(), destination)
         self.setCurrentIndex(self._queue_model.index(destination, 0))
+
+    def _selection_changed(
+        self,
+        _selected: QItemSelection,
+        _deselected: QItemSelection,
+    ) -> None:
+        self.selectionSummaryChanged.emit(self.selection_summary)
 
 
 def _drop_result_message(result: ExternalFileDrop) -> str:
