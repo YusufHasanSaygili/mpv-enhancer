@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -26,9 +27,20 @@ from mpv_enhancer.domain.selection_settings import (
     SettingPatch,
     inspect_selected_setting,
 )
-from mpv_enhancer.domain.settings import SETTING_SPEC_REGISTRY, SettingKey
+from mpv_enhancer.domain.settings import (
+    SETTING_SPEC_REGISTRY,
+    LanguagePreferences,
+    SettingKey,
+)
 
-type SettingControl = QDoubleSpinBox | QSpinBox | QComboBox
+type SettingControl = QDoubleSpinBox | QSpinBox | QComboBox | QLineEdit
+
+_LANGUAGE_PRESETS: tuple[tuple[str, LanguagePreferences | None], ...] = (
+    ("Custom", None),
+    ("English", LanguagePreferences.parse("en,eng")),
+    ("Turkish", LanguagePreferences.parse("tr,tur,en")),
+    ("Spanish", LanguagePreferences.parse("es,spa,en")),
+)
 
 
 @dataclass(slots=True)
@@ -64,6 +76,7 @@ class SelectedItemsSettingsPanel(QWidget):
         self._adapters = {key: MixedValueAdapter(key) for key in SettingKey}
         self._controls: dict[SettingKey, SettingControl] = {}
         self._state_labels: dict[SettingKey, QLabel] = {}
+        self._language_preset_controls: dict[SettingKey, QComboBox] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -138,6 +151,32 @@ class SelectedItemsSettingsPanel(QWidget):
 
         track_group = _settings_group("Tracks", "trackSettingsGroup")
         track_layout = QFormLayout(track_group)
+        language_help = QLabel(
+            (
+                "Enter comma-separated language tags in priority order. "
+                "MPV tries them from left to right; for example tr,tur,en. "
+                "Reset restores the inherited preference."
+            ),
+            track_group,
+        )
+        language_help.setObjectName("languagePreferenceHelpLabel")
+        language_help.setAccessibleName("Language preference help")
+        language_help.setWordWrap(True)
+        track_layout.addRow(language_help)
+        self._add_language_setting(
+            track_layout,
+            SettingKey.SUBTITLE_LANGUAGES,
+            "Subtitle Languages",
+            "subtitleLanguageControl",
+            "subtitleLanguagePresetControl",
+        )
+        self._add_language_setting(
+            track_layout,
+            SettingKey.AUDIO_LANGUAGES,
+            "Audio Languages",
+            "audioLanguageControl",
+            "audioLanguagePresetControl",
+        )
         self._add_boolean_setting(
             track_layout,
             SettingKey.SUBTITLE_VISIBILITY,
@@ -209,6 +248,39 @@ class SelectedItemsSettingsPanel(QWidget):
         layout.addRow(label, self._editor_row(key, control))
         self._controls[key] = control
 
+    def _add_language_setting(
+        self,
+        layout: QFormLayout,
+        key: SettingKey,
+        label: str,
+        object_name: str,
+        preset_object_name: str,
+    ) -> None:
+        control = QLineEdit(self)
+        control.setObjectName(object_name)
+        control.setAccessibleName(label)
+        control.setToolTip("Enter ordered comma-separated IETF or ISO language tags.")
+        control.editingFinished.connect(partial(self._language_edit_finished, key))
+
+        preset_control = QComboBox(self)
+        preset_control.setObjectName(preset_object_name)
+        preset_control.setAccessibleName(f"{label} preset")
+        preset_control.setToolTip("Choose a common ordered language preference.")
+        preset_control.addItems(tuple(label for label, _value in _LANGUAGE_PRESETS))
+        preset_control.currentIndexChanged.connect(
+            partial(self._language_preset_changed, key)
+        )
+
+        row = QWidget(self)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.addWidget(control, 2)
+        row_layout.addWidget(preset_control, 1)
+        self._add_state_and_reset_widgets(row_layout, row, key)
+        layout.addRow(label, row)
+        self._controls[key] = control
+        self._language_preset_controls[key] = preset_control
+
     def _add_boolean_setting(
         self,
         layout: QFormLayout,
@@ -231,6 +303,15 @@ class SelectedItemsSettingsPanel(QWidget):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(control, 1)
+        self._add_state_and_reset_widgets(layout, row, key)
+        return row
+
+    def _add_state_and_reset_widgets(
+        self,
+        layout: QHBoxLayout,
+        row: QWidget,
+        key: SettingKey,
+    ) -> None:
         state_label = QLabel("Inherited", row)
         state_label.setObjectName(f"{key.value}StateLabel")
         state_label.setAccessibleName(f"{key.value} selection state")
@@ -241,7 +322,6 @@ class SelectedItemsSettingsPanel(QWidget):
         reset_button.clicked.connect(partial(self._request_setting_reset, key))
         layout.addWidget(reset_button)
         self._state_labels[key] = state_label
-        return row
 
     def _numeric_value_changed(self, key: SettingKey, value: float | int) -> None:
         self.patchRequested.emit(SettingPatch(key, value))
@@ -253,6 +333,39 @@ class SelectedItemsSettingsPanel(QWidget):
             self.patchRequested.emit(SettingPatch(key, True))
         elif index == 2:
             self.patchRequested.emit(SettingPatch(key, False))
+
+    def _language_edit_finished(self, key: SettingKey) -> None:
+        control = self._controls[key]
+        if not isinstance(control, QLineEdit):
+            raise RuntimeError(f"{key.value} is not a language editor.")
+        try:
+            preferences = LanguagePreferences.parse(control.text())
+        except ValueError:
+            self._state_labels[key].setText("Invalid")
+            return
+        preset_control = self._language_preset_controls[key]
+        blocker = QSignalBlocker(preset_control)
+        preset_control.setCurrentIndex(_language_preset_index(preferences))
+        del blocker
+        control.setText(preferences.to_mpv_value())
+        self.patchRequested.emit(SettingPatch(key, preferences))
+
+    def _language_preset_changed(self, key: SettingKey, index: int) -> None:
+        if index == 0:
+            return
+        try:
+            preferences = _LANGUAGE_PRESETS[index][1]
+        except IndexError as error:
+            raise IndexError("Language preset index is out of range.") from error
+        if preferences is None:
+            raise RuntimeError("A named language preset requires a value.")
+        control = self._controls[key]
+        if not isinstance(control, QLineEdit):
+            raise RuntimeError(f"{key.value} is not a language editor.")
+        blocker = QSignalBlocker(control)
+        control.setText(preferences.to_mpv_value())
+        del blocker
+        self.patchRequested.emit(SettingPatch(key, preferences))
 
     def _request_setting_reset(self, key: SettingKey, _checked: bool = False) -> None:
         self.resetSettingRequested.emit(key)
@@ -287,7 +400,25 @@ class SelectedItemsSettingsPanel(QWidget):
         control = self._controls[key]
         self._state_labels[key].setText(state.state.value.title())
         blocker = QSignalBlocker(control)
-        if isinstance(control, QComboBox):
+        if isinstance(control, QLineEdit):
+            if state.state is SelectedSettingState.EXPLICIT:
+                value = state.value
+                if not isinstance(value, LanguagePreferences):
+                    raise RuntimeError(
+                        f"{key.value} resolved to the wrong control type."
+                    )
+                control.setText(value.to_mpv_value())
+                control.setPlaceholderText("")
+                preset_index = _language_preset_index(value)
+            else:
+                control.clear()
+                control.setPlaceholderText(state.state.value.title())
+                preset_index = 0
+            preset_control = self._language_preset_controls[key]
+            preset_blocker = QSignalBlocker(preset_control)
+            preset_control.setCurrentIndex(preset_index)
+            del preset_blocker
+        elif isinstance(control, QComboBox):
             if state.state is SelectedSettingState.INHERITED:
                 control.setCurrentIndex(0)
             elif state.state is SelectedSettingState.MIXED:
@@ -322,3 +453,10 @@ def _preset_at(index: int) -> SettingsPreset:
     if not 0 <= index < len(STARTER_PRESETS):
         raise IndexError("Settings preset index is out of range.")
     return STARTER_PRESETS[index]
+
+
+def _language_preset_index(preferences: LanguagePreferences) -> int:
+    for index, (_label, preset) in enumerate(_LANGUAGE_PRESETS):
+        if preset == preferences:
+            return index
+    return 0

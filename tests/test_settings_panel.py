@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QGroupBox,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -14,7 +15,13 @@ from PySide6.QtWidgets import (
 
 from mpv_enhancer.domain.models import QueueItem
 from mpv_enhancer.domain.selection_settings import SelectedSettingState, SettingPatch
-from mpv_enhancer.domain.settings import PlaybackSettings, SettingKey
+from mpv_enhancer.domain.settings import (
+    LanguagePreferences,
+    PlaybackSettings,
+    SettingKey,
+)
+from mpv_enhancer.ui.main_window import MainWindow
+from mpv_enhancer.ui.queue_model import QueueRole
 from mpv_enhancer.ui.settings_panel import SelectedItemsSettingsPanel
 
 
@@ -194,6 +201,114 @@ def test_numeric_control_binds_explicit_and_mixed_states_and_can_reset(qtbot) ->
     panel.resetSettingRequested.connect(resets.append)
     qtbot.mouseClick(_button(panel, "speedResetButton"), Qt.MouseButton.LeftButton)
     assert resets == [SettingKey.SPEED]
+
+
+def test_language_editors_explain_order_and_offer_common_presets(qtbot) -> None:
+    panel = SelectedItemsSettingsPanel()
+    qtbot.addWidget(panel)
+
+    help_label = panel.findChild(QLabel, "languagePreferenceHelpLabel")
+    subtitle_presets = panel.findChild(
+        QComboBox,
+        "subtitleLanguagePresetControl",
+    )
+    audio_presets = panel.findChild(QComboBox, "audioLanguagePresetControl")
+
+    assert help_label is not None
+    assert "left to right" in help_label.text()
+    assert "comma-separated" in help_label.text()
+    assert subtitle_presets is not None
+    assert audio_presets is not None
+    expected = ["Custom", "English", "Turkish", "Spanish"]
+    assert [subtitle_presets.itemText(index) for index in range(4)] == expected
+    assert [audio_presets.itemText(index) for index in range(4)] == expected
+
+
+def test_language_editor_binds_inherited_explicit_and_mixed_states(qtbot) -> None:
+    panel = SelectedItemsSettingsPanel()
+    qtbot.addWidget(panel)
+    control = panel.findChild(QLineEdit, "subtitleLanguageControl")
+    state_label = panel.findChild(QLabel, "subtitle_languagesStateLabel")
+    assert control is not None
+    assert state_label is not None
+
+    panel.set_selected_items((_item(1),))
+    assert control.text() == ""
+    assert control.placeholderText() == "Inherited"
+    assert state_label.text() == "Inherited"
+
+    turkish = LanguagePreferences.parse("tr,tur,en")
+    panel.set_selected_items(
+        (
+            _item(1, PlaybackSettings(subtitle_languages=turkish)),
+            _item(2, PlaybackSettings(subtitle_languages=turkish)),
+        )
+    )
+    assert control.text() == "tr,tur,en"
+    assert control.placeholderText() == ""
+    assert state_label.text() == "Explicit"
+
+    panel.set_selected_items(
+        (
+            _item(1, PlaybackSettings(subtitle_languages=turkish)),
+            _item(
+                2,
+                PlaybackSettings(
+                    subtitle_languages=LanguagePreferences.parse("es,spa,en")
+                ),
+            ),
+        )
+    )
+    assert control.text() == ""
+    assert control.placeholderText() == "Mixed"
+    assert state_label.text() == "Mixed"
+
+
+def test_language_presets_apply_turkish_and_spanish_independently_in_multi_edit(
+    qtbot,
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    items = tuple(_item(number) for number in range(1, 5))
+    for row, item in enumerate(items):
+        window.queue_model.insert_item(row, item)
+    subtitle_presets = window.settings_panel.findChild(
+        QComboBox,
+        "subtitleLanguagePresetControl",
+    )
+    audio_control = window.settings_panel.findChild(
+        QLineEdit,
+        "audioLanguageControl",
+    )
+    assert subtitle_presets is not None
+    assert audio_control is not None
+
+    window.queue_view.select_item_ids((items[0].item_id, items[1].item_id))
+    subtitle_presets.setCurrentText("Turkish")
+    window.queue_view.select_item_ids((items[2].item_id, items[3].item_id))
+    audio_control.setText(" es, spa, en ")
+    audio_control.editingFinished.emit()
+
+    turkish = LanguagePreferences.parse("tr,tur,en")
+    spanish = LanguagePreferences.parse("es,spa,en")
+    assert [item.overrides for item in window.queue_model.items] == [
+        PlaybackSettings(subtitle_languages=turkish),
+        PlaybackSettings(subtitle_languages=turkish),
+        PlaybackSettings(audio_languages=spanish),
+        PlaybackSettings(audio_languages=spanish),
+    ]
+    assert [
+        window.queue_model.data(
+            window.queue_model.index(row, 0),
+            QueueRole.OverrideSummary,
+        )
+        for row in range(4)
+    ] == [
+        "Subs tr/tur/en",
+        "Subs tr/tur/en",
+        "Audio es/spa/en",
+        "Audio es/spa/en",
+    ]
 
 
 def _group_title(panel: SelectedItemsSettingsPanel, name: str) -> str:
