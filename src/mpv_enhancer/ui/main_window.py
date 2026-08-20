@@ -30,6 +30,7 @@ from mpv_enhancer.ui.preferences_dialog import PreferencesDialog
 from mpv_enhancer.ui.queue_controller import QueueEditOutcome, QueueUndoController
 from mpv_enhancer.ui.queue_model import QueueListModel
 from mpv_enhancer.ui.queue_view import QueueDropListView
+from mpv_enhancer.ui.settings_panel import SelectedItemsSettingsPanel
 from mpv_enhancer.ui.transport_controls import TransportControls
 from mpv_enhancer.ui.video_host import VideoHost
 
@@ -96,10 +97,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        self.settings_panel = SelectedItemsSettingsPanel(self)
         settings = self._create_region(
             "settingsRegion",
             "Selected Item Settings",
-            "Select queue items to edit their playback settings.",
+            "Edit overrides for the selected queue items.",
+            self.settings_panel,
         )
         video_content = QWidget(self)
         video_layout = QVBoxLayout(video_content)
@@ -130,18 +133,11 @@ class MainWindow(QMainWindow):
         self.transport_controls.seekRequested.connect(self._request_seek)
         self.playback_failure_panel.retryRequested.connect(self._retry_failed_playback)
         self.playback_failure_panel.stopRequested.connect(self._stop_failed_playback)
-        selection_summary_label = settings.findChild(
-            QLabel,
-            "settingsRegionDescription",
-        )
-        if selection_summary_label is None:
-            raise RuntimeError("The selection summary label could not be created.")
-        self.selection_summary_label = selection_summary_label
-        self.selection_summary_label.setAccessibleName("Selection summary")
-        self.selection_summary_label.setText(self.queue_view.selection_summary)
+        self.selection_summary_label = self.settings_panel.selection_summary_label
         self.queue_view.selectionSummaryChanged.connect(
-            self.selection_summary_label.setText
+            self._settings_selection_changed
         )
+        self._settings_selection_changed(self.queue_view.selection_summary)
 
         queue_menu = self.menuBar().addMenu("Queue")
         remove_action = QAction("Remove Selected", self)
@@ -198,6 +194,13 @@ class MainWindow(QMainWindow):
                 outcome = self.queue_controller.remove_selected(stop_current=True)
         if outcome is QueueEditOutcome.NO_CHANGE:
             self.statusBar().showMessage("Select queue items to remove.")
+
+    def _settings_selection_changed(self, _summary: str) -> None:
+        selected_ids = set(self.queue_view.selected_item_ids)
+        selected_items = tuple(
+            item for item in self.queue_model.items if item.item_id in selected_ids
+        )
+        self.settings_panel.set_selected_items(selected_items)
 
     def request_clear_queue(self) -> None:
         """Clear the queue only after an explicit destructive confirmation."""
