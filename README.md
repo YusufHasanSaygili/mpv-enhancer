@@ -11,10 +11,15 @@ application will use Python, PySide6, and Qt Widgets.
 
 ## Project status
 
-The v0.1 foundation is under active development. The repository contains a
-runnable three-region desktop shell, persistent mpv preferences, safe local
-paths and rotating diagnostics, automated tests, and a Windows CI quality gate.
-Playback, queue behavior, and per-item settings are planned for later releases.
+The v0.1 foundation is available as a public pre-release. The repository
+contains a runnable three-region desktop shell, persistent mpv preferences,
+safe local paths and rotating diagnostics, automated tests, and a Windows CI
+quality gate. Playback, queue behavior, and per-item settings are planned for
+later releases.
+
+See [CHANGELOG.md](CHANGELOG.md) and the
+[v0.1 release notes](docs/releases/v0.1.md) for the immutable first-slice fork
+point, compatibility details, assets, and known limitations.
 
 ## Contributing
 

@@ -1,0 +1,200 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and audit release
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Check out protected tag
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.11.32"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Require an annotated version-matched tag
+        shell: pwsh
+        run: |
+          $tagType = git cat-file -t $env:GITHUB_REF_NAME
+          if ($tagType -ne "tag") {
+            throw "Release tags must be annotated; found $tagType."
+          }
+          uv run --locked python scripts/release_version.py $env:GITHUB_REF_NAME
+
+      - name: Install locked development dependencies
+        run: uv sync --extra dev --locked
+
+      - name: Run complete quality gate
+        run: uv run python scripts/quality.py
+
+      - name: Audit locked runtime dependencies
+        shell: pwsh
+        run: |
+          $requirements = "dist/runtime-requirements-$env:GITHUB_REF_NAME.txt"
+          uv export --format requirements.txt --no-dev --no-emit-project --locked --output-file $requirements
+          uv run pip-audit --requirement $requirements --strict
+
+      - name: Build wheel and CycloneDX SBOM
+        shell: pwsh
+        run: |
+          uv build --wheel
+          uv export --format cyclonedx1.5 --preview-features sbom-export --no-dev --locked --output-file "dist/mpv-enhancer-$env:GITHUB_REF_NAME.cdx.json"
+          Copy-Item THIRD_PARTY_NOTICES.md "dist/THIRD_PARTY_NOTICES-$env:GITHUB_REF_NAME.md"
+
+      - name: Install and launch wheel in a fresh environment
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem dist/*.whl | Select-Object -First 1
+          $requirements = Get-ChildItem dist/runtime-requirements-*.txt | Select-Object -First 1
+          uv venv build/release-smoke --python 3.12
+          uv pip install --python build/release-smoke/Scripts/python.exe --require-hashes --requirement $requirements.FullName
+          uv pip install --python build/release-smoke/Scripts/python.exe --no-deps $wheel.FullName
+          & build/release-smoke/Scripts/python.exe -I scripts/release_smoke.py
+
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $lines = Get-ChildItem dist -File |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            }
+          [System.IO.File]::WriteAllLines("dist/SHA256SUMS.txt", $lines)
+
+      - name: Upload reviewed release assets
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-assets
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish public pre-release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v7.0.1
+
+      - name: Download reviewed assets
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-assets
+          path: release-assets
+
+      - name: Create immutable GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --prerelease \
+            --title "MPV Enhancer $GITHUB_REF_NAME" \
+            --notes-file "docs/releases/$GITHUB_REF_NAME.md"
+
+  verify-public:
+    name: Verify public Windows asset
+    needs: publish
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Check out smoke test from tag
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - name: Download assets from the public release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path public-assets | Out-Null
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --dir public-assets
+
+      - name: Verify published SHA-256 checksums
+        shell: pwsh
+        run: |
+          $checksumFile = "public-assets/SHA256SUMS.txt"
+          foreach ($line in Get-Content $checksumFile) {
+            if ($line -notmatch '^([0-9a-f]{64})  (.+)$') {
+              throw "Invalid checksum line: $line"
+            }
+            $expectedHash = $Matches[1]
+            $assetPath = Join-Path public-assets $Matches[2]
+            $actualHash = (Get-FileHash -Algorithm SHA256 $assetPath).Hash.ToLowerInvariant()
+            if ($actualHash -ne $expectedHash) {
+              throw "Checksum mismatch for $($Matches[2])."
+            }
+          }
+
+      - name: Install and launch the published wheel
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem public-assets/*.whl | Select-Object -First 1
+          $requirements = Get-ChildItem public-assets/runtime-requirements-*.txt | Select-Object -First 1
+          python -m venv build/public-release-smoke
+          & build/public-release-smoke/Scripts/python.exe -m pip install --require-hashes --requirement $requirements.FullName
+          & build/public-release-smoke/Scripts/python.exe -m pip install --no-deps $wheel.FullName
+          & build/public-release-smoke/Scripts/python.exe -I scripts/release_smoke.py
+
+      - name: Record public verification evidence
+        shell: pwsh
+        run: |
+          $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:GITHUB_REF_NAME"
+          $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $assets = Get-ChildItem public-assets -File | Sort-Object Name | ForEach-Object { "- $($_.Name)" }
+          $checksums = Get-Content public-assets/SHA256SUMS.txt | ForEach-Object { "- ``$($_)``" }
+          $evidence = @(
+            "# MPV Enhancer $env:GITHUB_REF_NAME release evidence",
+            "",
+            "- Release URL: $releaseUrl",
+            "- Workflow run: $runUrl",
+            "- Runner: clean GitHub-hosted Windows environment",
+            "- Public download: PASS",
+            "- SHA-256 verification: PASS",
+            "- Fresh virtual environment install: PASS",
+            "- Offscreen application shell launch and close: PASS",
+            "",
+            "## Downloaded assets",
+            ""
+          ) + $assets + @("", "## Verified checksums", "") + $checksums
+          $evidencePath = "release-evidence-$env:GITHUB_REF_NAME.md"
+          [System.IO.File]::WriteAllLines($evidencePath, $evidence)
+          gh release upload $env:GITHUB_REF_NAME $evidencePath --repo $env:GITHUB_REPOSITORY --clobber
