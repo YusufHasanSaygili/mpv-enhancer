@@ -31,6 +31,14 @@ from mpv_enhancer.domain.settings import (
     SETTING_SPEC_REGISTRY,
     LanguagePreferences,
     SettingKey,
+    TrackSelection,
+    TrackSelectionMode,
+)
+from mpv_enhancer.infrastructure.mpv.tracks import (
+    MpvTrack,
+    MpvTrackType,
+    TrackAvailability,
+    TrackResolution,
 )
 
 type SettingControl = QDoubleSpinBox | QSpinBox | QComboBox | QLineEdit
@@ -77,6 +85,7 @@ class SelectedItemsSettingsPanel(QWidget):
         self._controls: dict[SettingKey, SettingControl] = {}
         self._state_labels: dict[SettingKey, QLabel] = {}
         self._language_preset_controls: dict[SettingKey, QComboBox] = {}
+        self._track_availability: TrackAvailability | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -177,6 +186,26 @@ class SelectedItemsSettingsPanel(QWidget):
             "audioLanguageControl",
             "audioLanguagePresetControl",
         )
+        self._add_track_setting(
+            track_layout,
+            SettingKey.SUBTITLE_TRACK,
+            "Subtitle Track",
+            "subtitleTrackControl",
+        )
+        self._add_track_setting(
+            track_layout,
+            SettingKey.AUDIO_TRACK,
+            "Audio Track",
+            "audioTrackControl",
+        )
+        self.track_availability_label = QLabel(
+            "Play an item to inspect available tracks.",
+            track_group,
+        )
+        self.track_availability_label.setObjectName("trackAvailabilityLabel")
+        self.track_availability_label.setAccessibleName("Track availability")
+        self.track_availability_label.setWordWrap(True)
+        track_layout.addRow(self.track_availability_label)
         self._add_boolean_setting(
             track_layout,
             SettingKey.SUBTITLE_VISIBILITY,
@@ -281,6 +310,28 @@ class SelectedItemsSettingsPanel(QWidget):
         self._controls[key] = control
         self._language_preset_controls[key] = preset_control
 
+    def _add_track_setting(
+        self,
+        layout: QFormLayout,
+        key: SettingKey,
+        label: str,
+        object_name: str,
+    ) -> None:
+        control = QComboBox(self)
+        control.setObjectName(object_name)
+        control.setAccessibleName(label)
+        control.setToolTip(
+            "Use automatic selection, turn this track type off, or choose a "
+            "track reported by the current file."
+        )
+        control.currentIndexChanged.connect(partial(self._track_index_changed, key))
+        layout.addRow(label, self._editor_row(key, control))
+        self._controls[key] = control
+        self._populate_track_control(
+            key,
+            SelectedSettingValue(SelectedSettingState.INHERITED),
+        )
+
     def _add_boolean_setting(
         self,
         layout: QFormLayout,
@@ -367,6 +418,18 @@ class SelectedItemsSettingsPanel(QWidget):
         del blocker
         self.patchRequested.emit(SettingPatch(key, preferences))
 
+    def _track_index_changed(self, key: SettingKey, index: int) -> None:
+        if index < 0:
+            return
+        control = self._controls[key]
+        if not isinstance(control, QComboBox):
+            raise RuntimeError(f"{key.value} is not a track selector.")
+        value = control.itemData(index)
+        if value is None:
+            self.resetSettingRequested.emit(key)
+        elif isinstance(value, TrackSelection):
+            self.patchRequested.emit(SettingPatch(key, value))
+
     def _request_setting_reset(self, key: SettingKey, _checked: bool = False) -> None:
         self.resetSettingRequested.emit(key)
 
@@ -396,6 +459,16 @@ class SelectedItemsSettingsPanel(QWidget):
             if adapter.key in self._controls:
                 self._bind_control(adapter.key, adapter.state)
 
+    def set_track_availability(
+        self,
+        availability: TrackAvailability | None,
+    ) -> None:
+        """Refresh current-file track choices without mutating item preferences."""
+        self._track_availability = availability
+        for key in (SettingKey.SUBTITLE_TRACK, SettingKey.AUDIO_TRACK):
+            self._populate_track_control(key, self._adapters[key].state)
+        self.track_availability_label.setText(_track_explanation(availability))
+
     def _bind_control(self, key: SettingKey, state: SelectedSettingValue) -> None:
         control = self._controls[key]
         self._state_labels[key].setText(state.state.value.title())
@@ -418,6 +491,11 @@ class SelectedItemsSettingsPanel(QWidget):
             preset_blocker = QSignalBlocker(preset_control)
             preset_control.setCurrentIndex(preset_index)
             del preset_blocker
+        elif isinstance(control, QComboBox) and key in {
+            SettingKey.SUBTITLE_TRACK,
+            SettingKey.AUDIO_TRACK,
+        }:
+            self._populate_track_control(key, state)
         elif isinstance(control, QComboBox):
             if state.state is SelectedSettingState.INHERITED:
                 control.setCurrentIndex(0)
@@ -436,6 +514,67 @@ class SelectedItemsSettingsPanel(QWidget):
                 control.setValue(round(value))
             else:
                 control.setValue(value)
+        del blocker
+
+    def _populate_track_control(
+        self,
+        key: SettingKey,
+        state: SelectedSettingValue,
+    ) -> None:
+        control = self._controls[key]
+        if not isinstance(control, QComboBox):
+            raise RuntimeError(f"{key.value} is not a track selector.")
+        track_type = (
+            MpvTrackType.SUBTITLE
+            if key is SettingKey.SUBTITLE_TRACK
+            else MpvTrackType.AUDIO
+        )
+        available = (
+            ()
+            if self._track_availability is None
+            else tuple(
+                track
+                for track in self._track_availability.tracks
+                if track.track_type is track_type
+            )
+        )
+        blocker = QSignalBlocker(control)
+        control.clear()
+        control.addItem("Inherited", None)
+        control.addItem("Auto", TrackSelection.auto())
+        control.addItem("Off", TrackSelection.off())
+        for track in available:
+            control.addItem(
+                _track_label(track),
+                TrackSelection.specific(track.track_id),
+            )
+        explicit = state.value if state.state is SelectedSettingState.EXPLICIT else None
+        if (
+            isinstance(explicit, TrackSelection)
+            and explicit.mode is TrackSelectionMode.SPECIFIC
+            and all(track.track_id != explicit.track_id for track in available)
+        ):
+            control.addItem(
+                f"Unavailable track ID {explicit.track_id}",
+                explicit,
+            )
+        control.addItem("Mixed", "mixed")
+        if state.state is SelectedSettingState.INHERITED:
+            selected_index = 0
+        elif state.state is SelectedSettingState.MIXED:
+            selected_index = control.count() - 1
+        elif isinstance(explicit, TrackSelection):
+            selected_index = next(
+                (
+                    index
+                    for index in range(control.count())
+                    if control.itemData(index) == explicit
+                ),
+                0,
+            )
+        else:
+            selected_index = 0
+        control.setCurrentIndex(selected_index)
         del blocker
 
     def state_for(self, key: SettingKey) -> SelectedSettingValue:
@@ -460,3 +599,46 @@ def _language_preset_index(preferences: LanguagePreferences) -> int:
         if preset == preferences:
             return index
     return 0
+
+
+def _track_label(track: MpvTrack) -> str:
+    description = track.title or track.language or "Untagged"
+    if track.title is not None and track.language is not None:
+        description = f"{description} ({track.language})"
+    flags = []
+    if track.is_default:
+        flags.append("default")
+    if track.is_forced:
+        flags.append("forced")
+    if track.is_external:
+        flags.append("external")
+    suffix = f" [{', '.join(flags)}]" if flags else ""
+    return f"{track.track_id} — {description}{suffix}"
+
+
+def _track_explanation(availability: TrackAvailability | None) -> str:
+    if availability is None:
+        return "Play an item to inspect available tracks."
+    if not availability.tracks:
+        return "No selectable audio or subtitle tracks were reported."
+    messages = []
+    for label, resolution in (
+        ("Subtitle", availability.subtitle),
+        ("Audio", availability.audio),
+    ):
+        if resolution.used_fallback:
+            messages.append(_fallback_explanation(label, resolution))
+    return (
+        " ".join(messages)
+        if messages
+        else "Available tracks are from the currently playing item."
+    )
+
+
+def _fallback_explanation(label: str, resolution: TrackResolution) -> str:
+    selection = resolution.selection
+    if selection.mode is TrackSelectionMode.SPECIFIC:
+        return f"{label} preference is unavailable; using track {selection.track_id}."
+    if selection.mode is TrackSelectionMode.OFF:
+        return f"{label} preference is unavailable; this track type is off."
+    return f"{label} preference is unavailable; using automatic selection."

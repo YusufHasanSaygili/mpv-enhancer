@@ -197,6 +197,8 @@ class MpvJsonPlaybackAdapter(QObject):
             )
 
     def _property_changed(self, name: str, value: JsonValue) -> None:
+        if name == "track-list":
+            return
         self.propertyChanged.emit(name, value)
 
     def _read_loaded_tracks(self, generation: int) -> None:
@@ -225,6 +227,7 @@ class MpvJsonPlaybackAdapter(QObject):
             settings,
             normalize_mpv_track_list(value),
         )
+        self.propertyChanged.emit("track-list", value)
 
     def _next_loading_entry(self) -> int | None:
         while self._loading_entries:

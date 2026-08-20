@@ -385,6 +385,9 @@ class MainWindow(QMainWindow):
             )
             controller.stateChanged.connect(self.transport_controls.apply_state)
             controller.failureOccurred.connect(self._show_playback_failure)
+            controller.trackAvailabilityChanged.connect(
+                self.settings_panel.set_track_availability
+            )
             self._playback_controller = controller
             self.transport_controls.set_playback_available(True)
             return
@@ -393,6 +396,7 @@ class MainWindow(QMainWindow):
 
     def _shutdown_playback(self) -> None:
         self._playback_controller = None
+        self.settings_panel.set_track_availability(None)
         self.playback_failure_panel.clear_failure()
         self.transport_controls.apply_state(PlaybackState())
         self.transport_controls.set_playback_available(False)

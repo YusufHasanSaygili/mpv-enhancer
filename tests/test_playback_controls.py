@@ -5,7 +5,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QPushButton, QSlider
 
 from mpv_enhancer.domain.models import Playlist, QueueItem
-from mpv_enhancer.domain.settings import EffectivePlaybackSettings
+from mpv_enhancer.domain.settings import (
+    EffectivePlaybackSettings,
+    LanguagePreferences,
+    PlaybackSettings,
+    TrackSelection,
+)
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue, MpvIpcEvent
 from mpv_enhancer.infrastructure.mpv.playback import (
     MpvJsonPlaybackAdapter,
@@ -13,6 +18,7 @@ from mpv_enhancer.infrastructure.mpv.playback import (
     PlaybackEvent,
     PlaybackEventType,
 )
+from mpv_enhancer.infrastructure.mpv.tracks import MpvTrackType
 from mpv_enhancer.ui.playback_controller import (
     PlaybackController,
     PlaybackPhase,
@@ -134,6 +140,38 @@ def test_controller_maps_play_pause_seek_stop_and_property_progress() -> None:
     assert any(state.position_seconds == 30.25 for state in states)
     assert states[-1].phase is PlaybackPhase.STOPPED
     assert states[-1].generation == 2
+
+
+def test_track_availability_updates_after_file_loaded() -> None:
+    item = QueueItem.create(
+        Path("synthetic/episode.mkv"),
+        overrides=PlaybackSettings(
+            subtitle_languages=LanguagePreferences.parse("tr,tur,en")
+        ),
+    )
+    model = QueueListModel(Playlist((item,)))
+    adapter = FakePlaybackAdapter()
+    controller = PlaybackController(model, adapter)
+    updates = []
+    controller.trackAvailabilityChanged.connect(updates.append)
+    assert controller.load_row(0)
+    generation = adapter.generations[-1]
+
+    adapter.emit_event(PlaybackEvent(PlaybackEventType.FILE_LOADED, generation))
+    adapter.emit(
+        "track-list",
+        [
+            {"type": "audio", "id": 1, "lang": "eng"},
+            {"type": "sub", "id": 7, "lang": "tr"},
+        ],
+    )
+
+    assert updates[0] is None
+    assert [track.track_type for track in updates[-1].tracks] == [
+        MpvTrackType.AUDIO,
+        MpvTrackType.SUBTITLE,
+    ]
+    assert updates[-1].subtitle.selection == TrackSelection.specific(7)
 
 
 def test_json_adapter_emits_safe_commands_and_observes_progress_properties() -> None:

@@ -20,6 +20,10 @@ from mpv_enhancer.infrastructure.mpv.playback import (
     PlaybackEvent,
     PlaybackEventType,
 )
+from mpv_enhancer.infrastructure.mpv.tracks import (
+    normalize_mpv_track_list,
+    resolve_track_availability,
+)
 from mpv_enhancer.ui.queue_model import QueueListModel
 
 
@@ -51,6 +55,7 @@ class PlaybackController(QObject):
 
     stateChanged = Signal(object)
     failureOccurred = Signal(str)
+    trackAvailabilityChanged = Signal(object)
 
     def __init__(
         self,
@@ -87,6 +92,7 @@ class PlaybackController(QObject):
             return False
         item = self._model.items[row]
         self._generation += 1
+        self.trackAvailabilityChanged.emit(None)
         self._adapter.apply_settings(self._effective_settings(item))
         self._adapter.load_file(item.source_path, self._generation)
         self._model.set_current_item(item.item_id)
@@ -185,6 +191,21 @@ class PlaybackController(QObject):
         return self.load_row(current_row + offset)
 
     def _property_changed(self, name: str, value: JsonValue) -> None:
+        if name == "track-list":
+            current_id = self._model.current_item_id
+            item = next(
+                (item for item in self._model.items if item.item_id == current_id),
+                None,
+            )
+            if item is not None:
+                tracks = normalize_mpv_track_list(value)
+                self.trackAvailabilityChanged.emit(
+                    resolve_track_availability(
+                        self._effective_settings(item),
+                        tracks,
+                    )
+                )
+            return
         if self._state.phase not in {PlaybackPhase.PLAYING, PlaybackPhase.PAUSED}:
             return
         if name == "pause" and isinstance(value, bool):
