@@ -86,3 +86,37 @@ shutdown checks, or if reliable JSON IPC recovery cannot be demonstrated. The
 fallback is an in-process libmpv adapter behind the same playback interfaces;
 adopting it requires a superseding ADR that records packaging, crash-isolation,
 and licensing consequences.
+
+## ADR-0002: Resolve media tracks after each generation-safe load
+
+- **Status:** Accepted
+- **Date:** 2026-08-20
+- **Decision:** Reset every managed track property before each load, then read
+  that file's normalized `track-list` after `file-loaded` and select audio and
+  subtitle IDs using one deterministic policy.
+
+### Selection policy
+
+Audio and subtitle tracks are resolved independently:
+
+1. `Off` remains off.
+2. An explicit ID is used only when that ID exists for the requested track
+   type in the current file.
+3. Ordered language tags are checked from left to right. When multiple tracks
+   share the first matching tag, a default track wins, then a forced track,
+   then source order.
+4. If no requested language matches, use the first default track, then a
+   forced subtitle track, then the first track of that type.
+5. If no track exists, subtitles resolve to off and audio remains automatic.
+
+A missing explicit ID enters the same language and fallback sequence. The
+resolution records that a fallback occurred so the settings UI can present a
+non-blocking explanation without inventing a track ID.
+
+### Generation safety
+
+The `track-list` read is requested only after the corresponding `file-loaded`
+event. Its asynchronous reply is tagged with the application load generation.
+If a newer load starts first, the older reply is ignored. This prevents a
+track ID from one episode from being applied to the next episode, even during
+rapid navigation or a delayed IPC reply.

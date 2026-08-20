@@ -3,7 +3,11 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-from mpv_enhancer.domain.settings import LanguagePreferences
+from mpv_enhancer.domain.settings import (
+    LanguagePreferences,
+    TrackSelection,
+    TrackSelectionMode,
+)
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 
 
@@ -50,6 +54,41 @@ class MpvTrack:
                 raise ValueError("Track flags must be boolean.")
 
 
+class TrackResolutionReason(StrEnum):
+    """Why one deterministic track selection was chosen."""
+
+    OFF = "off"
+    EXPLICIT = "explicit"
+    LANGUAGE = "language"
+    DEFAULT = "default"
+    FORCED = "forced"
+    FIRST = "first"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class TrackResolution:
+    """A resolved selection plus information needed for fallback UX."""
+
+    selection: TrackSelection
+    reason: TrackResolutionReason
+    matched_language: str | None = None
+    used_fallback: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.selection, TrackSelection):
+            raise ValueError("A track resolution requires a typed selection.")
+        if not isinstance(self.reason, TrackResolutionReason):
+            raise ValueError("A track resolution requires a known reason.")
+        if self.matched_language is not None:
+            normalized_language = _normalize_language(self.matched_language)
+            if normalized_language is None:
+                raise ValueError("A matched language must be one valid tag.")
+            object.__setattr__(self, "matched_language", normalized_language)
+        if not isinstance(self.used_fallback, bool):
+            raise ValueError("Track fallback metadata must be boolean.")
+
+
 _TRACK_TYPES = {
     "video": MpvTrackType.VIDEO,
     "audio": MpvTrackType.AUDIO,
@@ -67,6 +106,86 @@ def normalize_mpv_track_list(value: JsonValue) -> tuple[MpvTrack, ...]:
         if normalized is not None:
             tracks.append(normalized)
     return tuple(tracks)
+
+
+def resolve_track_selection(
+    *,
+    track_type: MpvTrackType,
+    requested: TrackSelection,
+    languages: LanguagePreferences,
+    tracks: tuple[MpvTrack, ...],
+) -> TrackResolution:
+    """Resolve explicit, language, and fallback rules in stable source order."""
+    if track_type not in {MpvTrackType.AUDIO, MpvTrackType.SUBTITLE}:
+        raise ValueError("Only audio and subtitle tracks can be selected.")
+    candidates = tuple(track for track in tracks if track.track_type is track_type)
+    if requested.mode is TrackSelectionMode.OFF:
+        return TrackResolution(TrackSelection.off(), TrackResolutionReason.OFF)
+
+    explicit_missing = False
+    if requested.mode is TrackSelectionMode.SPECIFIC:
+        explicit = next(
+            (track for track in candidates if track.track_id == requested.track_id),
+            None,
+        )
+        if explicit is not None:
+            return TrackResolution(requested, TrackResolutionReason.EXPLICIT)
+        explicit_missing = True
+
+    for language in languages.tags:
+        matching = tuple(track for track in candidates if track.language == language)
+        if matching:
+            chosen = _preferred_track(matching)
+            return TrackResolution(
+                TrackSelection.specific(chosen.track_id),
+                TrackResolutionReason.LANGUAGE,
+                matched_language=language,
+                used_fallback=explicit_missing,
+            )
+
+    used_fallback = explicit_missing or bool(languages.tags)
+    default = next((track for track in candidates if track.is_default), None)
+    if default is not None:
+        return TrackResolution(
+            TrackSelection.specific(default.track_id),
+            TrackResolutionReason.DEFAULT,
+            used_fallback=used_fallback,
+        )
+    if track_type is MpvTrackType.SUBTITLE:
+        forced = next((track for track in candidates if track.is_forced), None)
+        if forced is not None:
+            return TrackResolution(
+                TrackSelection.specific(forced.track_id),
+                TrackResolutionReason.FORCED,
+                used_fallback=used_fallback,
+            )
+    if candidates:
+        return TrackResolution(
+            TrackSelection.specific(candidates[0].track_id),
+            TrackResolutionReason.FIRST,
+            used_fallback=used_fallback,
+        )
+    unavailable = (
+        TrackSelection.off()
+        if track_type is MpvTrackType.SUBTITLE
+        else TrackSelection.auto()
+    )
+    return TrackResolution(
+        unavailable,
+        TrackResolutionReason.UNAVAILABLE,
+        used_fallback=used_fallback,
+    )
+
+
+def _preferred_track(tracks: tuple[MpvTrack, ...]) -> MpvTrack:
+    return min(
+        enumerate(tracks),
+        key=lambda pair: (
+            not pair[1].is_default,
+            not pair[1].is_forced,
+            pair[0],
+        ),
+    )[1]
 
 
 def _normalize_track(value: JsonValue) -> MpvTrack | None:

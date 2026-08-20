@@ -13,6 +13,11 @@ from mpv_enhancer.domain.settings import (
     TrackSelection,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
+from mpv_enhancer.infrastructure.mpv.tracks import (
+    MpvTrack,
+    MpvTrackType,
+    resolve_track_selection,
+)
 
 
 class SettingsIpcClient(Protocol):
@@ -45,6 +50,33 @@ class MpvSettingsAdapter:
                 spec.mpv_property,
                 _effective_value(settings, spec.key),
             )
+
+    def apply_resolved_tracks(
+        self,
+        settings: EffectivePlaybackSettings,
+        tracks: tuple[MpvTrack, ...],
+    ) -> None:
+        """Apply deterministic IDs after mpv reports the current file's tracks."""
+        subtitle = resolve_track_selection(
+            track_type=MpvTrackType.SUBTITLE,
+            requested=settings.subtitle_track,
+            languages=settings.subtitle_languages,
+            tracks=tracks,
+        )
+        audio = resolve_track_selection(
+            track_type=MpvTrackType.AUDIO,
+            requested=settings.audio_track,
+            languages=settings.audio_languages,
+            tracks=tracks,
+        )
+        self._set_property(
+            self._registry.require(SettingKey.SUBTITLE_TRACK).mpv_property,
+            subtitle.selection,
+        )
+        self._set_property(
+            self._registry.require(SettingKey.AUDIO_TRACK).mpv_property,
+            audio.selection,
+        )
 
     def _set_property(self, name: str, value: SettingValue) -> None:
         self._client.request(("set_property", name, _mpv_value(value)))
