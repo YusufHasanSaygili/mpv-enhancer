@@ -51,8 +51,26 @@ def test_tag_workflow_builds_and_verifies_public_release_assets() -> None:
         assert fragment in workflow
 
     assert "gh release upload" not in workflow
+    assert "AppendAllLines" not in workflow
+    assert "Out-File" in workflow
     assert workflow.count("-not $_.Name.StartsWith('.')") >= 2
     assert (REPOSITORY_ROOT / "scripts" / "release_smoke.py").is_file()
+
+
+def test_manual_workflow_reverifies_an_immutable_public_release() -> None:
+    workflow = _read(".github/workflows/verify-release.yml")
+
+    required_fragments = (
+        "workflow_dispatch:",
+        "windows-latest",
+        "gh release download",
+        "Get-FileHash",
+        "--require-hashes",
+        "scripts/release_smoke.py",
+        "Out-File",
+    )
+    for fragment in required_fragments:
+        assert fragment in workflow
 
 
 def test_public_tag_matches_the_release_version() -> None:
