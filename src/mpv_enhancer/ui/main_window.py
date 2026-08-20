@@ -18,6 +18,8 @@ from mpv_enhancer.infrastructure.mpv.discovery import (
 )
 from mpv_enhancer.infrastructure.preferences import MpvPreferenceStore
 from mpv_enhancer.ui.preferences_dialog import PreferencesDialog
+from mpv_enhancer.ui.queue_model import QueueListModel
+from mpv_enhancer.ui.queue_view import QueueDropListView
 
 
 class MainWindow(QMainWindow):
@@ -56,10 +58,14 @@ class MainWindow(QMainWindow):
             "Video and Transport",
             "Video playback and transport controls will appear here.",
         )
+        self.queue_model = QueueListModel()
+        self.queue_view = QueueDropListView(self.queue_model)
+        self.queue_view.dropMessage.connect(self.statusBar().showMessage)
         queue = self._create_region(
             "queueRegion",
             "Queue",
             "Drop media files here to build a playback queue.",
+            self.queue_view,
         )
 
         layout.addWidget(settings, 2)
@@ -119,6 +125,7 @@ class MainWindow(QMainWindow):
         object_name: str,
         title: str,
         description: str,
+        content: QWidget | None = None,
     ) -> QFrame:
         region = QFrame(self)
         region.setObjectName(object_name)
@@ -146,7 +153,11 @@ class MainWindow(QMainWindow):
         description_label.setWordWrap(True)
 
         layout.addWidget(title_label)
-        layout.addStretch(1)
-        layout.addWidget(description_label)
-        layout.addStretch(1)
+        if content is None:
+            layout.addStretch(1)
+            layout.addWidget(description_label)
+            layout.addStretch(1)
+        else:
+            layout.addWidget(description_label)
+            layout.addWidget(content, 1)
         return region

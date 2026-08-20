@@ -14,8 +14,9 @@ application will use Python, PySide6, and Qt Widgets.
 The v0.1 foundation is available as a public pre-release. The repository
 contains a runnable three-region desktop shell, persistent mpv preferences,
 safe local paths and rotating diagnostics, automated tests, and a Windows CI
-quality gate. Playback, queue behavior, and per-item settings are planned for
-later releases.
+quality gate. The development branch now also includes an ordered queue and
+external Explorer file drop with partial rejection of unsupported files.
+Playback and per-item settings are planned for later releases.
 
 See [CHANGELOG.md](CHANGELOG.md) and the
 [v0.1.1 recovery release notes](docs/releases/v0.1.1.md) for the verified,
@@ -61,8 +62,10 @@ python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
-The current application opens an English three-region desktop shell. Playback,
-queue behavior, and per-item settings will be added in later releases.
+The current application opens an English three-region desktop shell. Supported
+local media files can be dropped into the queue while invalid entries from the
+same drop are skipped with a status message. Playback, internal queue editing,
+and per-item settings will be added in later releases.
 
 ## mpv setup
 
