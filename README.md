@@ -11,7 +11,8 @@ application will use Python, PySide6, and Qt Widgets.
 
 ## Project status
 
-The v0.4 per-item settings slice is available as a public pre-release. The
+The v0.5 subtitle and audio language slice is available as a public
+pre-release. The
 repository contains a runnable three-region desktop shell, persistent mpv
 preferences, safe local paths and rotating diagnostics, automated tests, and a
 Windows CI quality gate. The application includes an ordered queue, Explorer
@@ -26,11 +27,15 @@ confirmation, and queue edits support Undo and Redo.
 Queue rows provide accessible labels, elide long titles, and show compact
 override badges. Starter presets cover reset-to-default, 1.2× playback,
 fill-display, and subtitle visibility.
+Subtitle and audio preferences accept ordered language tags, current-file
+track selectors expose automatic, off, and specific choices, and missing
+preferences follow a documented deterministic fallback. Subtitle visibility,
+subtitle delay, and audio delay remain independent per item.
 
-See [CHANGELOG.md](CHANGELOG.md) and the [v0.4 release notes](docs/releases/v0.4.md)
+See [CHANGELOG.md](CHANGELOG.md) and the [v0.5 release notes](docs/releases/v0.5.md)
 for compatibility details, assets, known limitations, and the immutable Slice
-04 fork point. The [v0.3 release](docs/releases/v0.3.md) remains available as
-the verified embedded-playback fork point.
+05 fork point. The [v0.4 release](docs/releases/v0.4.md) remains available as
+the verified per-item settings fork point.
 
 ## Contributing
 

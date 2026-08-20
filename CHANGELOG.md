@@ -6,6 +6,24 @@ corresponding three-part version such as `0.1.0`.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-20
+
+### Added
+
+- Ordered subtitle and audio language preferences with English, Turkish, and
+  Spanish presets and inherited, explicit, and mixed multi-edit states.
+- Normalized mpv track metadata for video, audio, and subtitle type, ID,
+  language, title, default, forced, and external flags.
+- Generation-safe deterministic track resolution for explicit IDs, off,
+  ordered language matching, and documented fallback behavior.
+- Current-file subtitle and audio selectors with automatic, off, specific,
+  unavailable, and mixed states plus non-blocking fallback explanations.
+- Independent live subtitle visibility, subtitle delay, and audio delay
+  controls with signed validation and per-setting reset.
+- Shell-free generation of short synthetic multilingual fixtures and installed
+  smoke coverage for independent Turkish Episode 6 and Spanish Episode 7
+  preferences.
+
 ## [0.4.0] - 2026-08-20
 
 ### Added
@@ -84,7 +102,8 @@ behavior is identical to v0.1.
 - Required Windows CI, Dependabot configuration, and a tag-driven pre-release
   workflow with dependency audit, SBOM, checksums, and public-asset smoke test.
 
-[Unreleased]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.4...HEAD
+[Unreleased]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.5...HEAD
+[0.5.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.4...v0.5
 [0.4.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.3...v0.4
 [0.3.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.2...v0.3
 [0.2.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.1.1...v0.2
