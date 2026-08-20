@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QFrame,
@@ -22,11 +22,14 @@ from mpv_enhancer.infrastructure.mpv.discovery import (
     MpvDiscoverer,
 )
 from mpv_enhancer.infrastructure.mpv.embedded import EmbeddedMpvSession
+from mpv_enhancer.infrastructure.mpv.playback import PlaybackAdapter
 from mpv_enhancer.infrastructure.preferences import MpvPreferenceStore
+from mpv_enhancer.ui.playback_controller import PlaybackController, PlaybackState
 from mpv_enhancer.ui.preferences_dialog import PreferencesDialog
 from mpv_enhancer.ui.queue_controller import QueueEditOutcome, QueueUndoController
 from mpv_enhancer.ui.queue_model import QueueListModel
 from mpv_enhancer.ui.queue_view import QueueDropListView
+from mpv_enhancer.ui.transport_controls import TransportControls
 from mpv_enhancer.ui.video_host import VideoHost
 
 
@@ -36,6 +39,9 @@ class PlaybackSession(Protocol):
     def start(self, executable: Path) -> bool: ...
 
     def shutdown(self) -> bool: ...
+
+    @property
+    def playback_adapter(self) -> PlaybackAdapter: ...
 
 
 PlaybackSessionFactory = Callable[[int], PlaybackSession]
@@ -64,6 +70,7 @@ class MainWindow(QMainWindow):
             else playback_session_factory
         )
         self._playback_session: PlaybackSession | None = None
+        self._playback_controller: PlaybackController | None = None
 
         settings_menu = self.menuBar().addMenu("Settings")
         preferences_action = QAction("Preferences...", self)
@@ -89,17 +96,31 @@ class MainWindow(QMainWindow):
             "Selected Item Settings",
             "Select queue items to edit their playback settings.",
         )
-        self.video_host = VideoHost()
+        video_content = QWidget(self)
+        video_layout = QVBoxLayout(video_content)
+        video_layout.setContentsMargins(0, 0, 0, 0)
+        video_layout.setSpacing(8)
+        self.video_host = VideoHost(video_content)
+        self.transport_controls = TransportControls(video_content)
+        self.transport_controls.set_playback_available(False)
+        video_layout.addWidget(self.video_host, 1)
+        video_layout.addWidget(self.transport_controls)
         video = self._create_region(
             "videoRegion",
             "Video and Transport",
             "Embedded video output",
-            self.video_host,
+            video_content,
         )
         self.queue_model = QueueListModel()
         self.queue_view = QueueDropListView(self.queue_model)
         self.queue_controller = QueueUndoController(self.queue_model, self.queue_view)
         self.queue_view.dropMessage.connect(self.statusBar().showMessage)
+        self.queue_view.doubleClicked.connect(self._load_queue_index)
+        self.transport_controls.playPauseRequested.connect(self._request_play_pause)
+        self.transport_controls.previousRequested.connect(self._request_previous)
+        self.transport_controls.nextRequested.connect(self._request_next)
+        self.transport_controls.stopRequested.connect(self._request_stop)
+        self.transport_controls.seekRequested.connect(self._request_seek)
         selection_summary_label = settings.findChild(
             QLabel,
             "settingsRegionDescription",
@@ -249,15 +270,55 @@ class MainWindow(QMainWindow):
         session = self._playback_session_factory(self.video_host.native_handle)
         if session.start(diagnostics.executable):
             self._playback_session = session
+            controller = PlaybackController(
+                self.queue_model,
+                session.playback_adapter,
+                self,
+            )
+            controller.stateChanged.connect(self.transport_controls.apply_state)
+            self._playback_controller = controller
+            self.transport_controls.set_playback_available(True)
             return
         session.shutdown()
         self.statusBar().showMessage("mpv could not start")
 
     def _shutdown_playback(self) -> None:
+        self._playback_controller = None
+        self.transport_controls.apply_state(PlaybackState())
+        self.transport_controls.set_playback_available(False)
         session = self._playback_session
         self._playback_session = None
         if session is not None:
             session.shutdown()
+
+    def _load_queue_index(self, index: QModelIndex) -> None:
+        controller = self._playback_controller
+        if controller is not None:
+            controller.load_row(index.row())
+
+    def _request_play_pause(self) -> None:
+        controller = self._playback_controller
+        if controller is None:
+            return
+        current_index = self.queue_view.currentIndex()
+        preferred_row = current_index.row() if current_index.isValid() else None
+        controller.toggle_play_pause(preferred_row)
+
+    def _request_previous(self) -> None:
+        if self._playback_controller is not None:
+            self._playback_controller.previous()
+
+    def _request_next(self) -> None:
+        if self._playback_controller is not None:
+            self._playback_controller.next()
+
+    def _request_stop(self) -> None:
+        if self._playback_controller is not None:
+            self._playback_controller.stop()
+
+    def _request_seek(self, seconds: float) -> None:
+        if self._playback_controller is not None:
+            self._playback_controller.seek_absolute(seconds)
 
     def _create_region(
         self,
