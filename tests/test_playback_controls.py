@@ -156,6 +156,7 @@ def test_json_adapter_emits_safe_commands_and_observes_progress_properties() -> 
         "duration",
         "time-pos",
         "pause",
+        "track-list",
     ]
     assert client.commands == [
         ("loadfile", "synthetic\\- media 'snow' 雪.mkv", "replace"),
