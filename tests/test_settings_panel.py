@@ -19,6 +19,14 @@ from mpv_enhancer.domain.settings import (
     LanguagePreferences,
     PlaybackSettings,
     SettingKey,
+    TrackSelection,
+)
+from mpv_enhancer.infrastructure.mpv.tracks import (
+    MpvTrack,
+    MpvTrackType,
+    TrackAvailability,
+    TrackResolution,
+    TrackResolutionReason,
 )
 from mpv_enhancer.ui.main_window import MainWindow
 from mpv_enhancer.ui.queue_model import QueueRole
@@ -309,6 +317,109 @@ def test_language_presets_apply_turkish_and_spanish_independently_in_multi_edit(
         "Audio es/spa/en",
         "Audio es/spa/en",
     ]
+
+
+def test_track_selectors_populate_specific_ids_without_emitting_during_refresh(
+    qtbot,
+) -> None:
+    panel = SelectedItemsSettingsPanel()
+    qtbot.addWidget(panel)
+    panel.set_selected_items((_item(1),))
+    patches = []
+    panel.patchRequested.connect(patches.append)
+    availability = TrackAvailability(
+        tracks=(
+            MpvTrack(
+                MpvTrackType.SUBTITLE,
+                7,
+                "tr",
+                "Turkish Signs",
+                is_default=True,
+            ),
+            MpvTrack(MpvTrackType.AUDIO, 2, "eng", "Original"),
+        ),
+        subtitle=TrackResolution(
+            TrackSelection.specific(7),
+            TrackResolutionReason.LANGUAGE,
+            matched_language="tr",
+        ),
+        audio=TrackResolution(
+            TrackSelection.specific(2),
+            TrackResolutionReason.FIRST,
+        ),
+    )
+
+    panel.set_track_availability(availability)
+
+    subtitle = panel.findChild(QComboBox, "subtitleTrackControl")
+    audio = panel.findChild(QComboBox, "audioTrackControl")
+    assert subtitle is not None
+    assert audio is not None
+    assert [subtitle.itemText(index) for index in range(subtitle.count())] == [
+        "Inherited",
+        "Auto",
+        "Off",
+        "7 — Turkish Signs (tr) [default]",
+        "Mixed",
+    ]
+    assert "2 — Original (eng)" in [
+        audio.itemText(index) for index in range(audio.count())
+    ]
+    assert patches == []
+
+    subtitle.setCurrentIndex(3)
+
+    assert patches == [
+        SettingPatch(SettingKey.SUBTITLE_TRACK, TrackSelection.specific(7))
+    ]
+
+
+def test_track_refresh_preserves_language_preferences_and_explains_fallback(
+    qtbot,
+) -> None:
+    panel = SelectedItemsSettingsPanel()
+    qtbot.addWidget(panel)
+    spanish = LanguagePreferences.parse("es,spa,en")
+    panel.set_selected_items((_item(7, PlaybackSettings(subtitle_languages=spanish)),))
+    patches = []
+    panel.patchRequested.connect(patches.append)
+
+    panel.set_track_availability(
+        TrackAvailability(
+            tracks=(MpvTrack(MpvTrackType.SUBTITLE, 7, "es", "Spanish"),),
+            subtitle=TrackResolution(
+                TrackSelection.specific(7),
+                TrackResolutionReason.LANGUAGE,
+                matched_language="es",
+            ),
+            audio=TrackResolution(
+                TrackSelection.auto(),
+                TrackResolutionReason.UNAVAILABLE,
+            ),
+        )
+    )
+
+    panel.set_track_availability(
+        TrackAvailability(
+            tracks=(MpvTrack(MpvTrackType.SUBTITLE, 2, "en", "English"),),
+            subtitle=TrackResolution(
+                TrackSelection.specific(2),
+                TrackResolutionReason.FIRST,
+                used_fallback=True,
+            ),
+            audio=TrackResolution(
+                TrackSelection.auto(),
+                TrackResolutionReason.UNAVAILABLE,
+            ),
+        )
+    )
+
+    explanation = panel.findChild(QLabel, "trackAvailabilityLabel")
+    assert explanation is not None
+    assert "Subtitle preference is unavailable" in explanation.text()
+    assert "track 2" in explanation.text()
+    assert panel.state_for(SettingKey.SUBTITLE_LANGUAGES).value == spanish
+    assert patches == []
 
 
 def _group_title(panel: SelectedItemsSettingsPanel, name: str) -> str:

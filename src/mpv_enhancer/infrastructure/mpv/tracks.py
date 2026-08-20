@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from mpv_enhancer.domain.settings import (
+    EffectivePlaybackSettings,
     LanguagePreferences,
     TrackSelection,
     TrackSelectionMode,
@@ -87,6 +88,15 @@ class TrackResolution:
             object.__setattr__(self, "matched_language", normalized_language)
         if not isinstance(self.used_fallback, bool):
             raise ValueError("Track fallback metadata must be boolean.")
+
+
+@dataclass(frozen=True, slots=True)
+class TrackAvailability:
+    """Current normalized tracks and their independent selection results."""
+
+    tracks: tuple[MpvTrack, ...]
+    subtitle: TrackResolution
+    audio: TrackResolution
 
 
 _TRACK_TYPES = {
@@ -174,6 +184,28 @@ def resolve_track_selection(
         unavailable,
         TrackResolutionReason.UNAVAILABLE,
         used_fallback=used_fallback,
+    )
+
+
+def resolve_track_availability(
+    settings: EffectivePlaybackSettings,
+    tracks: tuple[MpvTrack, ...],
+) -> TrackAvailability:
+    """Resolve both selectable track types from one current-file snapshot."""
+    return TrackAvailability(
+        tracks=tracks,
+        subtitle=resolve_track_selection(
+            track_type=MpvTrackType.SUBTITLE,
+            requested=settings.subtitle_track,
+            languages=settings.subtitle_languages,
+            tracks=tracks,
+        ),
+        audio=resolve_track_selection(
+            track_type=MpvTrackType.AUDIO,
+            requested=settings.audio_track,
+            languages=settings.audio_languages,
+            tracks=tracks,
+        ),
     )
 
 
