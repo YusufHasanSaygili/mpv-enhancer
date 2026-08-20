@@ -2,6 +2,7 @@
 
 from collections import deque
 from collections.abc import Callable, Sequence
+from concurrent.futures import Future
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -10,8 +11,13 @@ from typing import Protocol
 from PySide6.QtCore import QObject, Signal
 
 from mpv_enhancer.domain.settings import EffectivePlaybackSettings
-from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue, MpvIpcEvent
+from mpv_enhancer.infrastructure.mpv.json_ipc import (
+    JsonValue,
+    MpvIpcEvent,
+    MpvIpcRequest,
+)
 from mpv_enhancer.infrastructure.mpv.settings_adapter import MpvSettingsAdapter
+from mpv_enhancer.infrastructure.mpv.tracks import normalize_mpv_track_list
 
 PlaybackPropertyListener = Callable[[str, JsonValue], None]
 
@@ -48,7 +54,7 @@ PlaybackEventListener = Callable[[PlaybackEvent], None]
 class JsonIpcClient(Protocol):
     """JSON IPC operations required by the playback adapter."""
 
-    def request(self, command: Sequence[JsonValue]) -> object: ...
+    def request(self, command: Sequence[JsonValue]) -> MpvIpcRequest: ...
 
     def observe_property(
         self,
@@ -91,6 +97,8 @@ class MpvJsonPlaybackAdapter(QObject):
         self._entry_generations: dict[int, int] = {}
         self._loading_entries: deque[int] = deque()
         self._settings_adapter = MpvSettingsAdapter(client)
+        self._active_settings: EffectivePlaybackSettings | None = None
+        self._active_generation: int | None = None
 
     def begin_observing(
         self,
@@ -109,6 +117,7 @@ class MpvJsonPlaybackAdapter(QObject):
         self._pending_generations.clear()
         self._entry_generations.clear()
         self._loading_entries.clear()
+        self._active_generation = None
         if self._observing:
             self._observe_properties()
 
@@ -121,6 +130,7 @@ class MpvJsonPlaybackAdapter(QObject):
         if generation <= 0:
             raise ValueError("A playback load generation must be positive.")
         self._pending_generations.append(generation)
+        self._active_generation = generation
         try:
             self._client.request(("loadfile", str(path), "replace"))
         except Exception:
@@ -129,10 +139,13 @@ class MpvJsonPlaybackAdapter(QObject):
                 and self._pending_generations[-1] == generation
             ):
                 self._pending_generations.pop()
+            if self._active_generation == generation:
+                self._active_generation = None
             raise
 
     def apply_settings(self, settings: EffectivePlaybackSettings) -> None:
         """Reset and apply the complete allowlisted settings value."""
+        self._active_settings = settings
         self._settings_adapter.apply(settings)
 
     def set_paused(self, paused: bool) -> None:
@@ -142,6 +155,7 @@ class MpvJsonPlaybackAdapter(QObject):
         self._client.request(("seek", seconds, "absolute+exact"))
 
     def stop(self) -> None:
+        self._active_generation = None
         self._client.request(("stop",))
 
     def handle_event(self, event: MpvIpcEvent) -> None:
@@ -167,6 +181,7 @@ class MpvJsonPlaybackAdapter(QObject):
             return
         if event.name == "file-loaded":
             _discard_entry(self._loading_entries, entry_id)
+            self._read_loaded_tracks(generation)
             self.playbackEvent.emit(
                 PlaybackEvent(PlaybackEventType.FILE_LOADED, generation)
             )
@@ -183,6 +198,33 @@ class MpvJsonPlaybackAdapter(QObject):
 
     def _property_changed(self, name: str, value: JsonValue) -> None:
         self.propertyChanged.emit(name, value)
+
+    def _read_loaded_tracks(self, generation: int) -> None:
+        if generation != self._active_generation or self._active_settings is None:
+            return
+        request = self._client.request(("get_property", "track-list"))
+        request.future.add_done_callback(
+            lambda completed: self._loaded_tracks_received(generation, completed)
+        )
+
+    def _loaded_tracks_received(
+        self,
+        generation: int,
+        completed: Future[JsonValue],
+    ) -> None:
+        if generation != self._active_generation or completed.cancelled():
+            return
+        try:
+            value = completed.result()
+        except Exception:
+            return
+        settings = self._active_settings
+        if settings is None or generation != self._active_generation:
+            return
+        self._settings_adapter.apply_resolved_tracks(
+            settings,
+            normalize_mpv_track_list(value),
+        )
 
     def _next_loading_entry(self) -> int | None:
         while self._loading_entries:
