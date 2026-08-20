@@ -1,6 +1,11 @@
 """Qt-independent domain models and policies."""
 
 from mpv_enhancer.domain.models import Playlist, QueueItem
+from mpv_enhancer.domain.presets import (
+    STARTER_PRESETS,
+    PresetKey,
+    SettingsPreset,
+)
 from mpv_enhancer.domain.selection_settings import (
     SelectedSettingState,
     SelectedSettingValue,
@@ -40,6 +45,7 @@ __all__ = [
     "EffectiveSettingsResolver",
     "Playlist",
     "PlaybackSettings",
+    "PresetKey",
     "QueueItem",
     "SelectedSettingState",
     "SelectedSettingValue",
@@ -49,6 +55,8 @@ __all__ = [
     "SettingSpecRegistry",
     "SettingValue",
     "SettingValueType",
+    "SettingsPreset",
+    "STARTER_PRESETS",
     "SupportedExtensionPolicy",
     "apply_selection_patch",
     "inspect_selected_setting",
