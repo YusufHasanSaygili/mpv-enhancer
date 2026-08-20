@@ -5,7 +5,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
-from enum import StrEnum
+from enum import Enum, StrEnum
 from types import MappingProxyType
 
 _LANGUAGE_TAG_PATTERN = re.compile(
@@ -211,6 +211,25 @@ def _normalize_aspect_ratio(text: str) -> str:
     return ":".join(components)
 
 
+class VideoRotation(Enum):
+    """Reviewed automatic and right-angle video rotation choices."""
+
+    AUTO = "auto"
+    DEG_0 = "0"
+    DEG_90 = "90"
+    DEG_180 = "180"
+    DEG_270 = "270"
+
+    @property
+    def display_value(self) -> str:
+        """Return the concise value shown by editors and queue badges."""
+        return "Auto" if self is VideoRotation.AUTO else f"{self.value}°"
+
+    def to_mpv_value(self) -> str | int:
+        """Map automatic mode to mpv's documented manual-rotation reset."""
+        return "no" if self is VideoRotation.AUTO else int(self.value)
+
+
 @dataclass(frozen=True, slots=True)
 class VideoDimensions:
     """Positive decoded source dimensions used to validate video crops."""
@@ -342,6 +361,12 @@ class SettingKey(StrEnum):
     VIDEO_ZOOM = "video_zoom"
     VIDEO_PAN_X = "video_pan_x"
     VIDEO_PAN_Y = "video_pan_y"
+    VIDEO_ROTATION = "video_rotation"
+    DEINTERLACE = "deinterlace"
+    BRIGHTNESS = "brightness"
+    CONTRAST = "contrast"
+    GAMMA = "gamma"
+    SATURATION = "saturation"
     VOLUME = "volume"
     MUTE = "mute"
     SUBTITLE_VISIBILITY = "subtitle_visibility"
@@ -362,10 +387,17 @@ class SettingValueType(StrEnum):
     TRACK_SELECTION = "track_selection"
     ASPECT_RATIO = "aspect_ratio"
     VIDEO_CROP = "video_crop"
+    VIDEO_ROTATION = "video_rotation"
 
 
 type SettingValue = (
-    float | bool | LanguagePreferences | TrackSelection | AspectRatio | VideoCrop
+    float
+    | bool
+    | LanguagePreferences
+    | TrackSelection
+    | AspectRatio
+    | VideoCrop
+    | VideoRotation
 )
 
 
@@ -425,6 +457,10 @@ class SettingSpec:
         if self.value_type is SettingValueType.VIDEO_CROP:
             if not isinstance(value, VideoCrop):
                 raise ValueError(f"{self.key.value} requires a typed video crop.")
+            return value
+        if self.value_type is SettingValueType.VIDEO_ROTATION:
+            if not isinstance(value, VideoRotation):
+                raise ValueError(f"{self.key.value} requires a typed video rotation.")
             return value
 
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -544,6 +580,60 @@ SETTING_SPEC_REGISTRY = SettingSpecRegistry(
             apply_live=True,
         ),
         SettingSpec(
+            key=SettingKey.VIDEO_ROTATION,
+            mpv_property="video-rotate",
+            value_type=SettingValueType.VIDEO_ROTATION,
+            minimum=None,
+            maximum=None,
+            reset_value=VideoRotation.AUTO,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.DEINTERLACE,
+            mpv_property="deinterlace",
+            value_type=SettingValueType.BOOLEAN,
+            minimum=None,
+            maximum=None,
+            reset_value=False,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.BRIGHTNESS,
+            mpv_property="brightness",
+            value_type=SettingValueType.NUMBER,
+            minimum=-100.0,
+            maximum=100.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.CONTRAST,
+            mpv_property="contrast",
+            value_type=SettingValueType.NUMBER,
+            minimum=-100.0,
+            maximum=100.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.GAMMA,
+            mpv_property="gamma",
+            value_type=SettingValueType.NUMBER,
+            minimum=-100.0,
+            maximum=100.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.SATURATION,
+            mpv_property="saturation",
+            value_type=SettingValueType.NUMBER,
+            minimum=-100.0,
+            maximum=100.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
             key=SettingKey.VOLUME,
             mpv_property="volume",
             value_type=SettingValueType.NUMBER,
@@ -639,6 +729,12 @@ class PlaybackSettings:
     video_zoom: float | None = None
     video_pan_x: float | None = None
     video_pan_y: float | None = None
+    video_rotation: VideoRotation | None = None
+    deinterlace: bool | None = None
+    brightness: float | None = None
+    contrast: float | None = None
+    gamma: float | None = None
+    saturation: float | None = None
     volume: float | None = None
     mute: bool | None = None
     subtitle_visibility: bool | None = None
@@ -673,6 +769,7 @@ class PlaybackSettings:
                     TrackSelection,
                     AspectRatio,
                     VideoCrop,
+                    VideoRotation,
                 ),
             )
             else None
@@ -695,6 +792,21 @@ class PlaybackSettings:
             return replace(self, video_pan_x=_require_number(key, normalized))
         if key is SettingKey.VIDEO_PAN_Y:
             return replace(self, video_pan_y=_require_number(key, normalized))
+        if key is SettingKey.VIDEO_ROTATION:
+            return replace(
+                self,
+                video_rotation=_require_video_rotation(key, normalized),
+            )
+        if key is SettingKey.DEINTERLACE:
+            return replace(self, deinterlace=_require_boolean(key, normalized))
+        if key is SettingKey.BRIGHTNESS:
+            return replace(self, brightness=_require_number(key, normalized))
+        if key is SettingKey.CONTRAST:
+            return replace(self, contrast=_require_number(key, normalized))
+        if key is SettingKey.GAMMA:
+            return replace(self, gamma=_require_number(key, normalized))
+        if key is SettingKey.SATURATION:
+            return replace(self, saturation=_require_number(key, normalized))
         if key is SettingKey.VOLUME:
             return replace(self, volume=_require_number(key, normalized))
         if key is SettingKey.MUTE:
@@ -744,6 +856,18 @@ class PlaybackSettings:
             return replace(self, video_pan_x=None)
         if key is SettingKey.VIDEO_PAN_Y:
             return replace(self, video_pan_y=None)
+        if key is SettingKey.VIDEO_ROTATION:
+            return replace(self, video_rotation=None)
+        if key is SettingKey.DEINTERLACE:
+            return replace(self, deinterlace=None)
+        if key is SettingKey.BRIGHTNESS:
+            return replace(self, brightness=None)
+        if key is SettingKey.CONTRAST:
+            return replace(self, contrast=None)
+        if key is SettingKey.GAMMA:
+            return replace(self, gamma=None)
+        if key is SettingKey.SATURATION:
+            return replace(self, saturation=None)
         if key is SettingKey.VOLUME:
             return replace(self, volume=None)
         if key is SettingKey.MUTE:
@@ -777,6 +901,12 @@ class EffectivePlaybackSettings:
     video_zoom: float = 0.0
     video_pan_x: float = 0.0
     video_pan_y: float = 0.0
+    video_rotation: VideoRotation = VideoRotation.AUTO
+    deinterlace: bool = False
+    brightness: float = 0.0
+    contrast: float = 0.0
+    gamma: float = 0.0
+    saturation: float = 0.0
     subtitle_languages: LanguagePreferences = LanguagePreferences(())
     audio_languages: LanguagePreferences = LanguagePreferences(())
     subtitle_track: TrackSelection = TrackSelection.auto()
@@ -801,6 +931,7 @@ class EffectivePlaybackSettings:
                 TrackSelection,
                 AspectRatio,
                 VideoCrop,
+                VideoRotation,
             ),
         ):
             return value
@@ -849,6 +980,12 @@ def _require_video_crop(key: SettingKey, value: SettingValue) -> VideoCrop:
     return value
 
 
+def _require_video_rotation(key: SettingKey, value: SettingValue) -> VideoRotation:
+    if not isinstance(value, VideoRotation):
+        raise RuntimeError(f"{key.value} metadata is not a video rotation.")
+    return value
+
+
 def _reset_number(key: SettingKey) -> float:
     return _require_number(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
 
@@ -879,6 +1016,13 @@ def _reset_video_crop(key: SettingKey) -> VideoCrop:
     return _require_video_crop(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
 
 
+def _reset_video_rotation(key: SettingKey) -> VideoRotation:
+    return _require_video_rotation(
+        key,
+        SETTING_SPEC_REGISTRY.require(key).reset_value,
+    )
+
+
 EMPTY_PLAYBACK_SETTINGS = PlaybackSettings()
 DETERMINISTIC_BASELINE = PlaybackSettings(
     speed=_reset_number(SettingKey.SPEED),
@@ -888,6 +1032,12 @@ DETERMINISTIC_BASELINE = PlaybackSettings(
     video_zoom=_reset_number(SettingKey.VIDEO_ZOOM),
     video_pan_x=_reset_number(SettingKey.VIDEO_PAN_X),
     video_pan_y=_reset_number(SettingKey.VIDEO_PAN_Y),
+    video_rotation=_reset_video_rotation(SettingKey.VIDEO_ROTATION),
+    deinterlace=_reset_boolean(SettingKey.DEINTERLACE),
+    brightness=_reset_number(SettingKey.BRIGHTNESS),
+    contrast=_reset_number(SettingKey.CONTRAST),
+    gamma=_reset_number(SettingKey.GAMMA),
+    saturation=_reset_number(SettingKey.SATURATION),
     volume=_reset_number(SettingKey.VOLUME),
     mute=_reset_boolean(SettingKey.MUTE),
     subtitle_visibility=_reset_boolean(SettingKey.SUBTITLE_VISIBILITY),
@@ -924,6 +1074,15 @@ class EffectiveSettingsResolver:
             video_zoom=self._resolve_number(SettingKey.VIDEO_ZOOM, layers),
             video_pan_x=self._resolve_number(SettingKey.VIDEO_PAN_X, layers),
             video_pan_y=self._resolve_number(SettingKey.VIDEO_PAN_Y, layers),
+            video_rotation=self._resolve_video_rotation(
+                SettingKey.VIDEO_ROTATION,
+                layers,
+            ),
+            deinterlace=self._resolve_boolean(SettingKey.DEINTERLACE, layers),
+            brightness=self._resolve_number(SettingKey.BRIGHTNESS, layers),
+            contrast=self._resolve_number(SettingKey.CONTRAST, layers),
+            gamma=self._resolve_number(SettingKey.GAMMA, layers),
+            saturation=self._resolve_number(SettingKey.SATURATION, layers),
             volume=self._resolve_number(SettingKey.VOLUME, layers),
             mute=self._resolve_boolean(SettingKey.MUTE, layers),
             subtitle_visibility=self._resolve_boolean(
@@ -967,6 +1126,16 @@ class EffectiveSettingsResolver:
     ) -> bool:
         value = self._resolve_value(key, layers)
         if not isinstance(value, bool):
+            raise RuntimeError(f"{key.value} resolved to the wrong value type.")
+        return value
+
+    def _resolve_video_rotation(
+        self,
+        key: SettingKey,
+        layers: tuple[PlaybackSettings, ...],
+    ) -> VideoRotation:
+        value = self._resolve_value(key, layers)
+        if not isinstance(value, VideoRotation):
             raise RuntimeError(f"{key.value} resolved to the wrong value type.")
         return value
 

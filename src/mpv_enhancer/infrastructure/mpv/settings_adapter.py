@@ -14,6 +14,7 @@ from mpv_enhancer.domain.settings import (
     TrackSelection,
     VideoCrop,
     VideoDimensions,
+    VideoRotation,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.tracks import (
@@ -97,6 +98,8 @@ def _effective_value(
 
 
 def _mpv_value(value: SettingValue) -> JsonValue:
+    if isinstance(value, VideoRotation):
+        return value.to_mpv_value()
     if isinstance(value, VideoCrop):
         return value.to_mpv_value()
     if isinstance(value, AspectRatio):

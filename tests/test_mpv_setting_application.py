@@ -16,6 +16,7 @@ from mpv_enhancer.domain.settings import (
     PlaybackSettings,
     SettingKey,
     TrackSelection,
+    VideoRotation,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import (
     JsonValue,
@@ -71,6 +72,12 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
             video_zoom=1.0,
             video_pan_x=0.25,
             video_pan_y=-0.5,
+            video_rotation=VideoRotation.DEG_90,
+            deinterlace=True,
+            brightness=-25.0,
+            contrast=50.0,
+            gamma=10.0,
+            saturation=75.0,
             volume=80.0,
             mute=True,
             subtitle_visibility=False,
@@ -91,6 +98,12 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
         ("set_property", "video-zoom", 0.0),
         ("set_property", "video-pan-x", 0.0),
         ("set_property", "video-pan-y", 0.0),
+        ("set_property", "video-rotate", "no"),
+        ("set_property", "deinterlace", False),
+        ("set_property", "brightness", 0.0),
+        ("set_property", "contrast", 0.0),
+        ("set_property", "gamma", 0.0),
+        ("set_property", "saturation", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -106,6 +119,12 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
         ("set_property", "video-zoom", 1.0),
         ("set_property", "video-pan-x", 0.25),
         ("set_property", "video-pan-y", -0.5),
+        ("set_property", "video-rotate", 90),
+        ("set_property", "deinterlace", True),
+        ("set_property", "brightness", -25.0),
+        ("set_property", "contrast", 50.0),
+        ("set_property", "gamma", 10.0),
+        ("set_property", "saturation", 75.0),
         ("set_property", "volume", 80.0),
         ("set_property", "mute", True),
         ("set_property", "sub-visibility", False),
@@ -139,15 +158,21 @@ def test_controller_applies_settings_before_load_without_next_episode_leak() -> 
     second_load = client.commands.index(
         ("loadfile", "synthetic\\episode-02.mkv", "replace")
     )
-    assert first_load == 31
-    assert second_load == 63
-    assert client.commands[48:63] == [
+    assert first_load == 43
+    assert second_load == 87
+    assert client.commands[66:87] == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
         ("set_property", "video-zoom", 0.0),
         ("set_property", "video-pan-x", 0.0),
         ("set_property", "video-pan-y", 0.0),
+        ("set_property", "video-rotate", "no"),
+        ("set_property", "deinterlace", False),
+        ("set_property", "brightness", 0.0),
+        ("set_property", "contrast", 0.0),
+        ("set_property", "gamma", 0.0),
+        ("set_property", "saturation", 0.0),
         ("set_property", "volume", 85.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -214,14 +239,20 @@ def test_current_item_setting_changes_are_applied_live_without_reload() -> None:
     model.replace_items(updated, item.item_id)
 
     assert controller.refresh_current_settings()
-    assert len(client.commands) == before_live_update + 31
-    assert client.commands[-15:] == [
+    assert len(client.commands) == before_live_update + 43
+    assert client.commands[-21:] == [
         ("set_property", "speed", 1.5),
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
         ("set_property", "video-zoom", 0.0),
         ("set_property", "video-pan-x", 0.0),
         ("set_property", "video-pan-y", 0.0),
+        ("set_property", "video-rotate", "no"),
+        ("set_property", "deinterlace", False),
+        ("set_property", "brightness", 0.0),
+        ("set_property", "contrast", 0.0),
+        ("set_property", "gamma", 0.0),
+        ("set_property", "saturation", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -258,13 +289,19 @@ def test_visibility_and_signed_delays_update_and_reset_independently_live() -> N
     model.replace_items(updated, item.item_id)
 
     assert controller.refresh_current_settings()
-    assert client.commands[-15:] == [
+    assert client.commands[-21:] == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
         ("set_property", "video-zoom", 0.0),
         ("set_property", "video-pan-x", 0.0),
         ("set_property", "video-pan-y", 0.0),
+        ("set_property", "video-rotate", "no"),
+        ("set_property", "deinterlace", False),
+        ("set_property", "brightness", 0.0),
+        ("set_property", "contrast", 0.0),
+        ("set_property", "gamma", 0.0),
+        ("set_property", "saturation", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", False),

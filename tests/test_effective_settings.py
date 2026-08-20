@@ -15,6 +15,7 @@ from mpv_enhancer.domain.settings import (
     SettingValue,
     TrackSelection,
     VideoCrop,
+    VideoRotation,
 )
 
 _PRECEDENCE_VALUES: dict[
@@ -38,6 +39,17 @@ _PRECEDENCE_VALUES: dict[
     SettingKey.VIDEO_ZOOM: (0.0, 0.25, 0.75, 1.5),
     SettingKey.VIDEO_PAN_X: (0.0, -0.25, 0.5, 1.0),
     SettingKey.VIDEO_PAN_Y: (0.0, 0.25, -0.5, -1.0),
+    SettingKey.VIDEO_ROTATION: (
+        VideoRotation.AUTO,
+        VideoRotation.DEG_90,
+        VideoRotation.DEG_180,
+        VideoRotation.DEG_270,
+    ),
+    SettingKey.DEINTERLACE: (False, True, False, True),
+    SettingKey.BRIGHTNESS: (0.0, -25.0, 25.0, 50.0),
+    SettingKey.CONTRAST: (0.0, 25.0, -25.0, -50.0),
+    SettingKey.GAMMA: (0.0, -10.0, 10.0, 20.0),
+    SettingKey.SATURATION: (0.0, 50.0, -50.0, 100.0),
     SettingKey.VOLUME: (100.0, 90.0, 80.0, 70.0),
     SettingKey.MUTE: (False, True, False, True),
     SettingKey.SUBTITLE_VISIBILITY: (True, False, True, False),
@@ -159,6 +171,12 @@ def test_deterministic_baseline_contains_every_core_reset_value() -> None:
         video_zoom=0.0,
         video_pan_x=0.0,
         video_pan_y=0.0,
+        video_rotation=VideoRotation.AUTO,
+        deinterlace=False,
+        brightness=0.0,
+        contrast=0.0,
+        gamma=0.0,
+        saturation=0.0,
         volume=100.0,
         mute=False,
         subtitle_visibility=True,
