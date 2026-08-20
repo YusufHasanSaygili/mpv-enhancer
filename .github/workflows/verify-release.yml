@@ -116,7 +116,7 @@ jobs:
             "- Public download: PASS",
             "- SHA-256 verification: PASS",
             "- Fresh Python 3.12 environment install: PASS",
-            "- Offscreen 20-file queue drop, selection, reorder, undo, and shell lifecycle: PASS",
+            "- Offscreen 20-file queue, episodes 2/4/6 multi-edit, mixed-state, and no-leak settings workflows: PASS",
             "- Published wheel embedded local playback with Unicode and leading-hyphen filename: PASS",
             "",
             "## Downloaded assets",

@@ -6,6 +6,22 @@ corresponding three-part version such as `0.1.0`.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-20
+
+### Added
+
+- Typed, validated per-item settings for playback speed, pan-and-scan, volume,
+  mute, and subtitle visibility with deterministic inheritance and defaults.
+- A scrollable selected-item settings panel with inherited, explicit, and mixed
+  states, per-field reset, reset-all confirmation, and English tooltips.
+- Multi-item editing that updates only selected UUIDs and preserves unrelated
+  overrides.
+- Allowlisted mpv property application with managed-property resets before
+  every file and live updates for the current item.
+- Default, 1.2× Playback, Fill Display, Subtitles On, and Subtitles Off presets
+  with generated patch previews.
+- Compact queue-row override badges and an end-to-end episodes 2/4/6 scenario.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added
@@ -68,7 +84,8 @@ behavior is identical to v0.1.
 - Required Windows CI, Dependabot configuration, and a tag-driven pre-release
   workflow with dependency audit, SBOM, checksums, and public-asset smoke test.
 
-[Unreleased]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.3...HEAD
+[Unreleased]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.4...HEAD
+[0.4.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.3...v0.4
 [0.3.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.2...v0.3
 [0.2.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.1.1...v0.2
 [0.1.1]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.1...v0.1.1
