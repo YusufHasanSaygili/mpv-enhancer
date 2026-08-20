@@ -1,5 +1,5 @@
 import ctypes
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from PySide6.QtWidgets import QMainWindow
@@ -13,6 +13,7 @@ from mpv_enhancer.infrastructure.mpv.embedded import (
     EmbeddedMpvSession,
     build_embedded_mpv_arguments,
 )
+from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.pipe_transport import NamedPipeCallbacks
 from mpv_enhancer.ui.main_window import MainWindow
 from mpv_enhancer.ui.video_host import VideoHost
@@ -57,6 +58,7 @@ class FakePlaybackSession:
         self.host_hwnd = host_hwnd
         self.started_with: list[Path] = []
         self.shutdown_calls = 0
+        self.playback_adapter = NoopPlaybackAdapter()
 
     def start(self, executable: Path) -> bool:
         self.started_with.append(executable)
@@ -65,6 +67,26 @@ class FakePlaybackSession:
     def shutdown(self) -> bool:
         self.shutdown_calls += 1
         return True
+
+
+class NoopPlaybackAdapter:
+    def begin_observing(
+        self,
+        _listener: Callable[[str, JsonValue], None],
+    ) -> None:
+        pass
+
+    def load_file(self, _path: Path) -> None:
+        pass
+
+    def set_paused(self, _paused: bool) -> None:
+        pass
+
+    def seek_absolute(self, _seconds: float) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
 
 
 def test_video_host_keeps_one_native_handle_through_window_transitions(qtbot) -> None:

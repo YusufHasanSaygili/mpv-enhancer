@@ -11,6 +11,10 @@ from mpv_enhancer.infrastructure.mpv.pipe_transport import (
     NamedPipeTransport,
     PipeTransportState,
 )
+from mpv_enhancer.infrastructure.mpv.playback import (
+    MpvJsonPlaybackAdapter,
+    PlaybackAdapter,
+)
 from mpv_enhancer.infrastructure.mpv.process import MpvProcessSupervisor
 
 
@@ -90,6 +94,7 @@ class EmbeddedMpvSession:
             send=self._transport.send,
             callbacks=MpvIpcCallbacks(protocol_error=self._protocol_failed),
         )
+        self._playback_adapter = MpvJsonPlaybackAdapter(self._client)
         self._started = False
 
     @property
@@ -105,6 +110,10 @@ class EmbeddedMpvSession:
         if self._client is None:
             raise RuntimeError("The embedded mpv IPC client is unavailable.")
         return self._client
+
+    @property
+    def playback_adapter(self) -> PlaybackAdapter:
+        return self._playback_adapter
 
     def start(self, executable: Path) -> bool:
         """Start the child first, then connect its named-pipe transport."""
