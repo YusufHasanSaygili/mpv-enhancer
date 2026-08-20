@@ -282,6 +282,18 @@ def override_summary(settings: PlaybackSettings) -> str:
         badges.append(f"Pan X {settings.video_pan_x:+g}")
     if settings.video_pan_y is not None:
         badges.append(f"Pan Y {settings.video_pan_y:+g}")
+    if settings.video_rotation is not None:
+        badges.append(f"Rotate {settings.video_rotation.display_value}")
+    if settings.deinterlace is not None:
+        badges.append("Deinterlace On" if settings.deinterlace else "Deinterlace Off")
+    if settings.brightness is not None:
+        badges.append(f"Bright {settings.brightness:+g}")
+    if settings.contrast is not None:
+        badges.append(f"Contrast {settings.contrast:+g}")
+    if settings.gamma is not None:
+        badges.append(f"Gamma {settings.gamma:+g}")
+    if settings.saturation is not None:
+        badges.append(f"Saturation {settings.saturation:+g}")
     if settings.volume is not None:
         badges.append(f"{settings.volume:g}%")
     if settings.mute is not None:

@@ -37,6 +37,7 @@ from mpv_enhancer.domain.settings import (
     TrackSelectionMode,
     VideoCrop,
     VideoDimensions,
+    VideoRotation,
 )
 from mpv_enhancer.infrastructure.mpv.tracks import (
     MpvTrack,
@@ -291,11 +292,38 @@ class SelectedItemsSettingsPanel(QWidget):
         )
         reset_zoom_pan.clicked.connect(self._request_zoom_pan_reset)
         video_layout.addRow(reset_zoom_pan)
+        self._add_video_rotation_setting(video_layout)
+        self._add_boolean_setting(
+            video_layout,
+            SettingKey.DEINTERLACE,
+            "Deinterlace",
+            "deinterlaceControl",
+            "Choose whether deinterlacing is inherited, on, or off.",
+        )
+
+        image_group = _settings_group("Image", "imageSettingsGroup")
+        image_layout = QFormLayout(image_group)
+        for key, label, object_name in (
+            (SettingKey.BRIGHTNESS, "Brightness", "brightnessControl"),
+            (SettingKey.CONTRAST, "Contrast", "contrastControl"),
+            (SettingKey.GAMMA, "Gamma", "gammaControl"),
+            (SettingKey.SATURATION, "Saturation", "saturationControl"),
+        ):
+            self._add_numeric_setting(
+                image_layout,
+                key,
+                label,
+                object_name,
+                f"Adjust {label.casefold()} from -100 to +100.",
+                decimals=None,
+                step=1.0,
+            )
         content_layout.addWidget(preset_group)
         content_layout.addWidget(playback_group)
         content_layout.addWidget(track_group)
         content_layout.addWidget(timing_group)
         content_layout.addWidget(video_group)
+        content_layout.addWidget(image_group)
         content_layout.addStretch(1)
         scroll_area.setWidget(self.settings_content)
         layout.addWidget(scroll_area, 1)
@@ -434,6 +462,23 @@ class SelectedItemsSettingsPanel(QWidget):
         source_label.setAccessibleName("Crop source dimensions")
         source_label.setWordWrap(True)
         layout.addRow(source_label)
+
+    def _add_video_rotation_setting(self, layout: QFormLayout) -> None:
+        key = SettingKey.VIDEO_ROTATION
+        control = QComboBox(self)
+        control.setObjectName("videoRotationControl")
+        control.setAccessibleName("Video Rotation")
+        control.setToolTip(
+            "Use source metadata automatically or apply a reviewed right-angle "
+            "rotation."
+        )
+        control.addItem("Inherited", None)
+        for rotation in VideoRotation:
+            control.addItem(rotation.display_value, rotation)
+        control.addItem("Mixed", "mixed")
+        control.currentIndexChanged.connect(self._video_rotation_index_changed)
+        layout.addRow("Rotation", self._editor_row(key, control))
+        self._controls[key] = control
 
     def _add_track_setting(
         self,
@@ -625,6 +670,18 @@ class SelectedItemsSettingsPanel(QWidget):
     def _request_setting_reset(self, key: SettingKey, _checked: bool = False) -> None:
         self.resetSettingRequested.emit(key)
 
+    def _video_rotation_index_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        control = self._controls[SettingKey.VIDEO_ROTATION]
+        if not isinstance(control, QComboBox):
+            raise RuntimeError("video_rotation is not a rotation editor.")
+        value = control.itemData(index)
+        if value is None:
+            self.resetSettingRequested.emit(SettingKey.VIDEO_ROTATION)
+        elif isinstance(value, VideoRotation):
+            self.patchRequested.emit(SettingPatch(SettingKey.VIDEO_ROTATION, value))
+
     def _request_zoom_pan_reset(self, _checked: bool = False) -> None:
         self.resetSettingsRequested.emit(
             (
@@ -727,6 +784,8 @@ class SelectedItemsSettingsPanel(QWidget):
             self._bind_aspect_ratio_control(control, state)
         elif isinstance(control, QComboBox) and key is SettingKey.VIDEO_CROP:
             self._bind_crop_control(control, state)
+        elif isinstance(control, QComboBox) and key is SettingKey.VIDEO_ROTATION:
+            self._bind_video_rotation_control(control, state)
         elif isinstance(control, QComboBox):
             if state.state is SelectedSettingState.INHERITED:
                 control.setCurrentIndex(0)
@@ -798,6 +857,22 @@ class SelectedItemsSettingsPanel(QWidget):
         control.setCurrentIndex(matching_index)
         if matching_index < 0:
             control.setEditText(value.display_value)
+
+    @staticmethod
+    def _bind_video_rotation_control(
+        control: QComboBox,
+        state: SelectedSettingValue,
+    ) -> None:
+        if state.state is SelectedSettingState.INHERITED:
+            control.setCurrentIndex(0)
+            return
+        if state.state is SelectedSettingState.MIXED:
+            control.setCurrentIndex(control.count() - 1)
+            return
+        value = state.value
+        if not isinstance(value, VideoRotation):
+            raise RuntimeError("video_rotation resolved to the wrong control type.")
+        control.setCurrentIndex(control.findData(value))
 
     def _update_crop_source_label(self) -> None:
         label = self.findChild(QLabel, "cropSourceDimensionsLabel")
