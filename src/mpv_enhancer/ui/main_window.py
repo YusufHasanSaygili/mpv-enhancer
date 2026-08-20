@@ -1,7 +1,11 @@
 """Main application window and three-region desktop layout."""
 
+from collections.abc import Callable
+from pathlib import Path
+from typing import Protocol
+
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -17,17 +21,34 @@ from mpv_enhancer.infrastructure.mpv.discovery import (
     MpvDiagnostics,
     MpvDiscoverer,
 )
+from mpv_enhancer.infrastructure.mpv.embedded import EmbeddedMpvSession
 from mpv_enhancer.infrastructure.preferences import MpvPreferenceStore
 from mpv_enhancer.ui.preferences_dialog import PreferencesDialog
 from mpv_enhancer.ui.queue_controller import QueueEditOutcome, QueueUndoController
 from mpv_enhancer.ui.queue_model import QueueListModel
 from mpv_enhancer.ui.queue_view import QueueDropListView
+from mpv_enhancer.ui.video_host import VideoHost
+
+
+class PlaybackSession(Protocol):
+    """Embedded playback lifecycle owned by the main window."""
+
+    def start(self, executable: Path) -> bool: ...
+
+    def shutdown(self) -> bool: ...
+
+
+PlaybackSessionFactory = Callable[[int], PlaybackSession]
 
 
 class MainWindow(QMainWindow):
     """Top-level window containing the planned three-region workspace."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        playback_session_factory: PlaybackSessionFactory | None = None,
+    ) -> None:
         super().__init__()
         self.setObjectName("mainWindow")
         self.setWindowTitle("MPV Enhancer")
@@ -37,12 +58,25 @@ class MainWindow(QMainWindow):
         self._mpv_discovery: MpvDiscoverer | None = None
         self._mpv_diagnostics: MpvDiagnostics | None = None
         self._preferences_dialog: PreferencesDialog | None = None
+        self._playback_session_factory = (
+            _create_playback_session
+            if playback_session_factory is None
+            else playback_session_factory
+        )
+        self._playback_session: PlaybackSession | None = None
 
         settings_menu = self.menuBar().addMenu("Settings")
         preferences_action = QAction("Preferences...", self)
         preferences_action.setObjectName("preferencesAction")
         preferences_action.triggered.connect(self.open_preferences)
         settings_menu.addAction(preferences_action)
+
+        view_menu = self.menuBar().addMenu("View")
+        full_screen_action = QAction("Full Screen", self)
+        full_screen_action.setObjectName("fullScreenAction")
+        full_screen_action.setShortcut("F11")
+        full_screen_action.triggered.connect(self.toggle_full_screen)
+        view_menu.addAction(full_screen_action)
 
         workspace = QWidget(self)
         workspace.setObjectName("workspace")
@@ -55,10 +89,12 @@ class MainWindow(QMainWindow):
             "Selected Item Settings",
             "Select queue items to edit their playback settings.",
         )
+        self.video_host = VideoHost()
         video = self._create_region(
             "videoRegion",
             "Video and Transport",
-            "Video playback and transport controls will appear here.",
+            "Embedded video output",
+            self.video_host,
         )
         self.queue_model = QueueListModel()
         self.queue_view = QueueDropListView(self.queue_model)
@@ -157,6 +193,14 @@ class MainWindow(QMainWindow):
         self._mpv_discovery = discovery
         self._mpv_diagnostics = diagnostics
         self._show_mpv_status(diagnostics)
+        self._configure_playback(diagnostics)
+
+    def toggle_full_screen(self) -> None:
+        """Toggle the complete workspace while preserving the video HWND."""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
 
     def open_preferences(self) -> None:
         """Open the non-blocking mpv setup and diagnostics dialog."""
@@ -185,12 +229,35 @@ class MainWindow(QMainWindow):
         )
         self._mpv_diagnostics = diagnostics
         self._show_mpv_status(diagnostics)
+        self._configure_playback(diagnostics)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Shut down only the playback session owned by this window."""
+        self._shutdown_playback()
+        super().closeEvent(event)
 
     def _show_mpv_status(self, diagnostics: MpvDiagnostics) -> None:
         if diagnostics.is_available:
             self.statusBar().showMessage(f"mpv {diagnostics.version} is ready")
         else:
             self.statusBar().showMessage("mpv setup is required")
+
+    def _configure_playback(self, diagnostics: MpvDiagnostics) -> None:
+        self._shutdown_playback()
+        if not diagnostics.is_available or diagnostics.executable is None:
+            return
+        session = self._playback_session_factory(self.video_host.native_handle)
+        if session.start(diagnostics.executable):
+            self._playback_session = session
+            return
+        session.shutdown()
+        self.statusBar().showMessage("mpv could not start")
+
+    def _shutdown_playback(self) -> None:
+        session = self._playback_session
+        self._playback_session = None
+        if session is not None:
+            session.shutdown()
 
     def _create_region(
         self,
@@ -233,3 +300,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(description_label)
             layout.addWidget(content, 1)
         return region
+
+
+def _create_playback_session(host_hwnd: int) -> PlaybackSession:
+    return EmbeddedMpvSession(host_hwnd)
