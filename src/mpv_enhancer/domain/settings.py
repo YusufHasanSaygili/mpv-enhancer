@@ -4,6 +4,7 @@ import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from types import MappingProxyType
 
@@ -11,6 +12,10 @@ _LANGUAGE_TAG_PATTERN = re.compile(
     r"[a-z]{2,8}(?:-[a-z0-9]{1,8})*",
     re.IGNORECASE,
 )
+_ASPECT_RATIO_PATTERN = re.compile(
+    r"\s*(\d+(?:\.\d*)?|\.\d+)\s*:\s*(\d+(?:\.\d*)?|\.\d+)\s*"
+)
+_COMMON_ASPECT_RATIOS = ("16:9", "21:9", "4:3")
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,11 +117,103 @@ class TrackSelection:
         return self.track_id
 
 
+class AspectRatioMode(StrEnum):
+    """Reviewed automatic, common, and custom aspect-ratio modes."""
+
+    AUTO = "auto"
+    COMMON = "common"
+    CUSTOM = "custom"
+
+
+@dataclass(frozen=True, slots=True)
+class AspectRatio:
+    """A safe automatic or positive width-to-height video aspect ratio."""
+
+    mode: AspectRatioMode
+    ratio: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.mode, AspectRatioMode):
+            raise ValueError("An aspect ratio requires a valid mode.")
+        if self.mode is AspectRatioMode.AUTO:
+            if self.ratio is not None:
+                raise ValueError("An automatic aspect ratio cannot contain a ratio.")
+            return
+        if not isinstance(self.ratio, str):
+            raise ValueError("A non-automatic aspect ratio requires ratio text.")
+        normalized = _normalize_aspect_ratio(self.ratio)
+        is_common = normalized in _COMMON_ASPECT_RATIOS
+        if self.mode is AspectRatioMode.COMMON and not is_common:
+            raise ValueError("A common aspect ratio must use a reviewed common value.")
+        if self.mode is AspectRatioMode.CUSTOM and is_common:
+            raise ValueError("A reviewed common aspect ratio must use common mode.")
+        object.__setattr__(self, "ratio", normalized)
+
+    @classmethod
+    def auto(cls) -> "AspectRatio":
+        """Use the media's normal aspect-ratio metadata."""
+        return cls(AspectRatioMode.AUTO)
+
+    @classmethod
+    def parse(cls, text: str) -> "AspectRatio":
+        """Parse ``auto`` or a positive ``width:height`` ratio."""
+        if not isinstance(text, str):
+            raise ValueError("A video aspect ratio must be text.")
+        if text.strip().casefold() == "auto":
+            return cls.auto()
+        normalized = _normalize_aspect_ratio(text)
+        mode = (
+            AspectRatioMode.COMMON
+            if normalized in _COMMON_ASPECT_RATIOS
+            else AspectRatioMode.CUSTOM
+        )
+        return cls(mode, normalized)
+
+    @property
+    def display_value(self) -> str:
+        """Return the normalized value shown in the settings editor."""
+        return "Auto" if self.mode is AspectRatioMode.AUTO else self._require_ratio()
+
+    def to_mpv_value(self) -> str:
+        """Map automatic mode to mpv's documented reset value."""
+        return "no" if self.mode is AspectRatioMode.AUTO else self._require_ratio()
+
+    def _require_ratio(self) -> str:
+        if self.ratio is None:
+            raise RuntimeError("A non-automatic aspect ratio has no ratio text.")
+        return self.ratio
+
+
+def _normalize_aspect_ratio(text: str) -> str:
+    if len(text) > 64:
+        raise ValueError("Invalid video aspect ratio; use positive width:height.")
+    match = _ASPECT_RATIO_PATTERN.fullmatch(text)
+    if match is None:
+        raise ValueError("Invalid video aspect ratio; use positive width:height.")
+    components: list[str] = []
+    for raw_component in match.groups():
+        try:
+            component = Decimal(raw_component)
+        except InvalidOperation as error:
+            raise ValueError(
+                "Invalid video aspect ratio; use positive width:height."
+            ) from error
+        if not component.is_finite() or component <= 0:
+            raise ValueError("Invalid video aspect ratio; use positive width:height.")
+        whole, separator, fraction = format(component, "f").partition(".")
+        whole = whole.lstrip("0") or "0"
+        fraction = fraction.rstrip("0")
+        normalized = whole + (f".{fraction}" if separator and fraction else "")
+        components.append(normalized)
+    return ":".join(components)
+
+
 class SettingKey(StrEnum):
     """Stable application keys for reviewed per-item settings."""
 
     SPEED = "speed"
     PANSCAN = "panscan"
+    ASPECT_RATIO = "aspect_ratio"
     VOLUME = "volume"
     MUTE = "mute"
     SUBTITLE_VISIBILITY = "subtitle_visibility"
@@ -135,9 +232,10 @@ class SettingValueType(StrEnum):
     BOOLEAN = "boolean"
     LANGUAGE_PREFERENCES = "language_preferences"
     TRACK_SELECTION = "track_selection"
+    ASPECT_RATIO = "aspect_ratio"
 
 
-type SettingValue = float | bool | LanguagePreferences | TrackSelection
+type SettingValue = float | bool | LanguagePreferences | TrackSelection | AspectRatio
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +286,10 @@ class SettingSpec:
         if self.value_type is SettingValueType.TRACK_SELECTION:
             if not isinstance(value, TrackSelection):
                 raise ValueError(f"{self.key.value} requires a typed track selection.")
+            return value
+        if self.value_type is SettingValueType.ASPECT_RATIO:
+            if not isinstance(value, AspectRatio):
+                raise ValueError(f"{self.key.value} requires a typed aspect ratio.")
             return value
 
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -259,6 +361,15 @@ SETTING_SPEC_REGISTRY = SettingSpecRegistry(
             minimum=0.0,
             maximum=1.0,
             reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.ASPECT_RATIO,
+            mpv_property="video-aspect-override",
+            value_type=SettingValueType.ASPECT_RATIO,
+            minimum=None,
+            maximum=None,
+            reset_value=AspectRatio.auto(),
             apply_live=True,
         ),
         SettingSpec(
@@ -352,6 +463,7 @@ class PlaybackSettings:
 
     speed: float | None = None
     panscan: float | None = None
+    aspect_ratio: AspectRatio | None = None
     volume: float | None = None
     mute: bool | None = None
     subtitle_visibility: bool | None = None
@@ -379,7 +491,7 @@ class PlaybackSettings:
             value
             if isinstance(
                 value,
-                (bool, float, LanguagePreferences, TrackSelection),
+                (bool, float, LanguagePreferences, TrackSelection, AspectRatio),
             )
             else None
         )
@@ -391,6 +503,8 @@ class PlaybackSettings:
             return replace(self, speed=_require_number(key, normalized))
         if key is SettingKey.PANSCAN:
             return replace(self, panscan=_require_number(key, normalized))
+        if key is SettingKey.ASPECT_RATIO:
+            return replace(self, aspect_ratio=_require_aspect_ratio(key, normalized))
         if key is SettingKey.VOLUME:
             return replace(self, volume=_require_number(key, normalized))
         if key is SettingKey.MUTE:
@@ -430,6 +544,8 @@ class PlaybackSettings:
             return replace(self, speed=None)
         if key is SettingKey.PANSCAN:
             return replace(self, panscan=None)
+        if key is SettingKey.ASPECT_RATIO:
+            return replace(self, aspect_ratio=None)
         if key is SettingKey.VOLUME:
             return replace(self, volume=None)
         if key is SettingKey.MUTE:
@@ -458,6 +574,7 @@ class EffectivePlaybackSettings:
     volume: float
     mute: bool
     subtitle_visibility: bool
+    aspect_ratio: AspectRatio = AspectRatio.auto()
     subtitle_languages: LanguagePreferences = LanguagePreferences(())
     audio_languages: LanguagePreferences = LanguagePreferences(())
     subtitle_track: TrackSelection = TrackSelection.auto()
@@ -473,7 +590,10 @@ class EffectivePlaybackSettings:
     def value_for(self, key: SettingKey) -> SettingValue:
         """Return one complete typed effective value."""
         value = getattr(self, key.value)
-        if isinstance(value, (bool, float, LanguagePreferences, TrackSelection)):
+        if isinstance(
+            value,
+            (bool, float, LanguagePreferences, TrackSelection, AspectRatio),
+        ):
             return value
         raise RuntimeError(f"{key.value} resolved to an unsupported value type.")
 
@@ -508,6 +628,12 @@ def _require_track_selection(
     return value
 
 
+def _require_aspect_ratio(key: SettingKey, value: SettingValue) -> AspectRatio:
+    if not isinstance(value, AspectRatio):
+        raise RuntimeError(f"{key.value} metadata is not an aspect ratio.")
+    return value
+
+
 def _reset_number(key: SettingKey) -> float:
     return _require_number(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
 
@@ -530,10 +656,15 @@ def _reset_track_selection(key: SettingKey) -> TrackSelection:
     )
 
 
+def _reset_aspect_ratio(key: SettingKey) -> AspectRatio:
+    return _require_aspect_ratio(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
+
+
 EMPTY_PLAYBACK_SETTINGS = PlaybackSettings()
 DETERMINISTIC_BASELINE = PlaybackSettings(
     speed=_reset_number(SettingKey.SPEED),
     panscan=_reset_number(SettingKey.PANSCAN),
+    aspect_ratio=_reset_aspect_ratio(SettingKey.ASPECT_RATIO),
     volume=_reset_number(SettingKey.VOLUME),
     mute=_reset_boolean(SettingKey.MUTE),
     subtitle_visibility=_reset_boolean(SettingKey.SUBTITLE_VISIBILITY),
@@ -565,6 +696,7 @@ class EffectiveSettingsResolver:
         return EffectivePlaybackSettings(
             speed=self._resolve_number(SettingKey.SPEED, layers),
             panscan=self._resolve_number(SettingKey.PANSCAN, layers),
+            aspect_ratio=self._resolve_aspect_ratio(SettingKey.ASPECT_RATIO, layers),
             volume=self._resolve_number(SettingKey.VOLUME, layers),
             mute=self._resolve_boolean(SettingKey.MUTE, layers),
             subtitle_visibility=self._resolve_boolean(
@@ -628,6 +760,16 @@ class EffectiveSettingsResolver:
     ) -> TrackSelection:
         value = self._resolve_value(key, layers)
         if not isinstance(value, TrackSelection):
+            raise RuntimeError(f"{key.value} resolved to the wrong value type.")
+        return value
+
+    def _resolve_aspect_ratio(
+        self,
+        key: SettingKey,
+        layers: tuple[PlaybackSettings, ...],
+    ) -> AspectRatio:
+        value = self._resolve_value(key, layers)
+        if not isinstance(value, AspectRatio):
             raise RuntimeError(f"{key.value} resolved to the wrong value type.")
         return value
 

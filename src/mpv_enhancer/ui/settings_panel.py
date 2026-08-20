@@ -29,6 +29,7 @@ from mpv_enhancer.domain.selection_settings import (
 )
 from mpv_enhancer.domain.settings import (
     SETTING_SPEC_REGISTRY,
+    AspectRatio,
     LanguagePreferences,
     SettingKey,
     TrackSelection,
@@ -248,6 +249,7 @@ class SelectedItemsSettingsPanel(QWidget):
             decimals=2,
             step=0.05,
         )
+        self._add_aspect_ratio_setting(video_layout)
         content_layout.addWidget(preset_group)
         content_layout.addWidget(playback_group)
         content_layout.addWidget(track_group)
@@ -333,6 +335,35 @@ class SelectedItemsSettingsPanel(QWidget):
         layout.addRow(label, row)
         self._controls[key] = control
         self._language_preset_controls[key] = preset_control
+
+    def _add_aspect_ratio_setting(self, layout: QFormLayout) -> None:
+        key = SettingKey.ASPECT_RATIO
+        control = QComboBox(self)
+        control.setObjectName("aspectRatioControl")
+        control.setAccessibleName("Aspect Ratio")
+        control.setToolTip(
+            "Use media metadata automatically, choose a common ratio, or enter "
+            "a positive custom width:height ratio."
+        )
+        control.setEditable(True)
+        control.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        control.addItem("Inherited", None)
+        control.addItem("Auto", AspectRatio.auto())
+        for ratio in ("16:9", "21:9", "4:3"):
+            control.addItem(ratio, AspectRatio.parse(ratio))
+        control.addItem("Custom", "custom")
+        control.addItem("Mixed", "mixed")
+        control.currentIndexChanged.connect(
+            partial(self._aspect_ratio_index_changed, key)
+        )
+        line_edit = control.lineEdit()
+        if line_edit is None:
+            raise RuntimeError("An editable aspect-ratio control requires a line edit.")
+        line_edit.editingFinished.connect(
+            partial(self._aspect_ratio_edit_finished, key)
+        )
+        layout.addRow("Aspect Ratio", self._editor_row(key, control))
+        self._controls[key] = control
 
     def _add_track_setting(
         self,
@@ -424,6 +455,37 @@ class SelectedItemsSettingsPanel(QWidget):
         del blocker
         control.setText(preferences.to_mpv_value())
         self.patchRequested.emit(SettingPatch(key, preferences))
+
+    def _aspect_ratio_index_changed(self, key: SettingKey, index: int) -> None:
+        if index < 0:
+            return
+        control = self._controls[key]
+        if not isinstance(control, QComboBox):
+            raise RuntimeError(f"{key.value} is not an aspect-ratio editor.")
+        value = control.itemData(index)
+        if value is None:
+            self.resetSettingRequested.emit(key)
+        elif isinstance(value, AspectRatio):
+            self.patchRequested.emit(SettingPatch(key, value))
+        elif value == "custom":
+            control.setEditText("")
+
+    def _aspect_ratio_edit_finished(self, key: SettingKey) -> None:
+        control = self._controls[key]
+        if not isinstance(control, QComboBox):
+            raise RuntimeError(f"{key.value} is not an aspect-ratio editor.")
+        current_index = control.currentIndex()
+        if current_index >= 0 and control.currentText() == control.itemText(
+            current_index
+        ):
+            return
+        try:
+            ratio = AspectRatio.parse(control.currentText())
+        except ValueError:
+            self._state_labels[key].setText("Invalid")
+            return
+        control.setEditText(ratio.display_value)
+        self.patchRequested.emit(SettingPatch(key, ratio))
 
     def _language_preset_changed(self, key: SettingKey, index: int) -> None:
         if index == 0:
@@ -520,6 +582,8 @@ class SelectedItemsSettingsPanel(QWidget):
             SettingKey.AUDIO_TRACK,
         }:
             self._populate_track_control(key, state)
+        elif isinstance(control, QComboBox) and key is SettingKey.ASPECT_RATIO:
+            self._bind_aspect_ratio_control(control, state)
         elif isinstance(control, QComboBox):
             if state.state is SelectedSettingState.INHERITED:
                 control.setCurrentIndex(0)
@@ -539,6 +603,32 @@ class SelectedItemsSettingsPanel(QWidget):
             else:
                 control.setValue(value)
         del blocker
+
+    @staticmethod
+    def _bind_aspect_ratio_control(
+        control: QComboBox,
+        state: SelectedSettingValue,
+    ) -> None:
+        if state.state is SelectedSettingState.INHERITED:
+            control.setCurrentIndex(0)
+            return
+        if state.state is SelectedSettingState.MIXED:
+            control.setCurrentIndex(control.count() - 1)
+            return
+        value = state.value
+        if not isinstance(value, AspectRatio):
+            raise RuntimeError("aspect_ratio resolved to the wrong control type.")
+        matching_index = next(
+            (
+                index
+                for index in range(control.count())
+                if control.itemData(index) == value
+            ),
+            -1,
+        )
+        control.setCurrentIndex(matching_index)
+        if matching_index < 0:
+            control.setEditText(value.display_value)
 
     def _populate_track_control(
         self,

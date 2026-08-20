@@ -6,6 +6,7 @@ import pytest
 from mpv_enhancer.domain.models import Playlist, QueueItem
 from mpv_enhancer.domain.settings import (
     DETERMINISTIC_BASELINE,
+    AspectRatio,
     EffectivePlaybackSettings,
     EffectiveSettingsResolver,
     LanguagePreferences,
@@ -21,6 +22,12 @@ _PRECEDENCE_VALUES: dict[
 ] = {
     SettingKey.SPEED: (1.0, 1.25, 1.5, 2.0),
     SettingKey.PANSCAN: (0.0, 0.25, 0.5, 1.0),
+    SettingKey.ASPECT_RATIO: (
+        AspectRatio.auto(),
+        AspectRatio.parse("16:9"),
+        AspectRatio.parse("4:3"),
+        AspectRatio.parse("2.39:1"),
+    ),
     SettingKey.VOLUME: (100.0, 90.0, 80.0, 70.0),
     SettingKey.MUTE: (False, True, False, True),
     SettingKey.SUBTITLE_VISIBILITY: (True, False, True, False),
@@ -137,6 +144,7 @@ def test_deterministic_baseline_contains_every_core_reset_value() -> None:
     assert DETERMINISTIC_BASELINE == PlaybackSettings(
         speed=1.0,
         panscan=0.0,
+        aspect_ratio=AspectRatio.auto(),
         volume=100.0,
         mute=False,
         subtitle_visibility=True,

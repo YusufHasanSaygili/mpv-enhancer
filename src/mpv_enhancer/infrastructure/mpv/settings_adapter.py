@@ -5,6 +5,7 @@ from typing import Protocol
 
 from mpv_enhancer.domain.settings import (
     SETTING_SPEC_REGISTRY,
+    AspectRatio,
     EffectivePlaybackSettings,
     LanguagePreferences,
     SettingKey,
@@ -80,6 +81,8 @@ def _effective_value(
 
 
 def _mpv_value(value: SettingValue) -> JsonValue:
+    if isinstance(value, AspectRatio):
+        return value.to_mpv_value()
     if isinstance(value, LanguagePreferences):
         return value.to_mpv_value()
     if isinstance(value, TrackSelection):

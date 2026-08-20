@@ -83,6 +83,7 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
     assert client.commands == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
+        ("set_property", "video-aspect-override", "no"),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -94,6 +95,7 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
         ("set_property", "audio-delay", 0.0),
         ("set_property", "speed", 1.2),
         ("set_property", "panscan", 0.75),
+        ("set_property", "video-aspect-override", "no"),
         ("set_property", "volume", 80.0),
         ("set_property", "mute", True),
         ("set_property", "sub-visibility", False),
@@ -127,11 +129,12 @@ def test_controller_applies_settings_before_load_without_next_episode_leak() -> 
     second_load = client.commands.index(
         ("loadfile", "synthetic\\episode-02.mkv", "replace")
     )
-    assert first_load == 22
-    assert second_load == 45
-    assert client.commands[34:45] == [
+    assert first_load == 24
+    assert second_load == 49
+    assert client.commands[37:49] == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
+        ("set_property", "video-aspect-override", "no"),
         ("set_property", "volume", 85.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -198,10 +201,11 @@ def test_current_item_setting_changes_are_applied_live_without_reload() -> None:
     model.replace_items(updated, item.item_id)
 
     assert controller.refresh_current_settings()
-    assert len(client.commands) == before_live_update + 22
-    assert client.commands[-11:] == [
+    assert len(client.commands) == before_live_update + 24
+    assert client.commands[-12:] == [
         ("set_property", "speed", 1.5),
         ("set_property", "panscan", 0.0),
+        ("set_property", "video-aspect-override", "no"),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -238,9 +242,10 @@ def test_visibility_and_signed_delays_update_and_reset_independently_live() -> N
     model.replace_items(updated, item.item_id)
 
     assert controller.refresh_current_settings()
-    assert client.commands[-11:] == [
+    assert client.commands[-12:] == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
+        ("set_property", "video-aspect-override", "no"),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", False),
