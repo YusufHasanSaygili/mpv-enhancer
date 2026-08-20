@@ -339,6 +339,9 @@ class SettingKey(StrEnum):
     PANSCAN = "panscan"
     ASPECT_RATIO = "aspect_ratio"
     VIDEO_CROP = "video_crop"
+    VIDEO_ZOOM = "video_zoom"
+    VIDEO_PAN_X = "video_pan_x"
+    VIDEO_PAN_Y = "video_pan_y"
     VOLUME = "volume"
     MUTE = "mute"
     SUBTITLE_VISIBILITY = "subtitle_visibility"
@@ -514,6 +517,33 @@ SETTING_SPEC_REGISTRY = SettingSpecRegistry(
             apply_live=True,
         ),
         SettingSpec(
+            key=SettingKey.VIDEO_ZOOM,
+            mpv_property="video-zoom",
+            value_type=SettingValueType.NUMBER,
+            minimum=-2.0,
+            maximum=2.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.VIDEO_PAN_X,
+            mpv_property="video-pan-x",
+            value_type=SettingValueType.NUMBER,
+            minimum=-1.0,
+            maximum=1.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
+            key=SettingKey.VIDEO_PAN_Y,
+            mpv_property="video-pan-y",
+            value_type=SettingValueType.NUMBER,
+            minimum=-1.0,
+            maximum=1.0,
+            reset_value=0.0,
+            apply_live=True,
+        ),
+        SettingSpec(
             key=SettingKey.VOLUME,
             mpv_property="volume",
             value_type=SettingValueType.NUMBER,
@@ -606,6 +636,9 @@ class PlaybackSettings:
     panscan: float | None = None
     aspect_ratio: AspectRatio | None = None
     video_crop: VideoCrop | None = None
+    video_zoom: float | None = None
+    video_pan_x: float | None = None
+    video_pan_y: float | None = None
     volume: float | None = None
     mute: bool | None = None
     subtitle_visibility: bool | None = None
@@ -656,6 +689,12 @@ class PlaybackSettings:
             return replace(self, aspect_ratio=_require_aspect_ratio(key, normalized))
         if key is SettingKey.VIDEO_CROP:
             return replace(self, video_crop=_require_video_crop(key, normalized))
+        if key is SettingKey.VIDEO_ZOOM:
+            return replace(self, video_zoom=_require_number(key, normalized))
+        if key is SettingKey.VIDEO_PAN_X:
+            return replace(self, video_pan_x=_require_number(key, normalized))
+        if key is SettingKey.VIDEO_PAN_Y:
+            return replace(self, video_pan_y=_require_number(key, normalized))
         if key is SettingKey.VOLUME:
             return replace(self, volume=_require_number(key, normalized))
         if key is SettingKey.MUTE:
@@ -699,6 +738,12 @@ class PlaybackSettings:
             return replace(self, aspect_ratio=None)
         if key is SettingKey.VIDEO_CROP:
             return replace(self, video_crop=None)
+        if key is SettingKey.VIDEO_ZOOM:
+            return replace(self, video_zoom=None)
+        if key is SettingKey.VIDEO_PAN_X:
+            return replace(self, video_pan_x=None)
+        if key is SettingKey.VIDEO_PAN_Y:
+            return replace(self, video_pan_y=None)
         if key is SettingKey.VOLUME:
             return replace(self, volume=None)
         if key is SettingKey.MUTE:
@@ -729,6 +774,9 @@ class EffectivePlaybackSettings:
     subtitle_visibility: bool
     aspect_ratio: AspectRatio = AspectRatio.auto()
     video_crop: VideoCrop = VideoCrop.off()
+    video_zoom: float = 0.0
+    video_pan_x: float = 0.0
+    video_pan_y: float = 0.0
     subtitle_languages: LanguagePreferences = LanguagePreferences(())
     audio_languages: LanguagePreferences = LanguagePreferences(())
     subtitle_track: TrackSelection = TrackSelection.auto()
@@ -837,6 +885,9 @@ DETERMINISTIC_BASELINE = PlaybackSettings(
     panscan=_reset_number(SettingKey.PANSCAN),
     aspect_ratio=_reset_aspect_ratio(SettingKey.ASPECT_RATIO),
     video_crop=_reset_video_crop(SettingKey.VIDEO_CROP),
+    video_zoom=_reset_number(SettingKey.VIDEO_ZOOM),
+    video_pan_x=_reset_number(SettingKey.VIDEO_PAN_X),
+    video_pan_y=_reset_number(SettingKey.VIDEO_PAN_Y),
     volume=_reset_number(SettingKey.VOLUME),
     mute=_reset_boolean(SettingKey.MUTE),
     subtitle_visibility=_reset_boolean(SettingKey.SUBTITLE_VISIBILITY),
@@ -870,6 +921,9 @@ class EffectiveSettingsResolver:
             panscan=self._resolve_number(SettingKey.PANSCAN, layers),
             aspect_ratio=self._resolve_aspect_ratio(SettingKey.ASPECT_RATIO, layers),
             video_crop=self._resolve_video_crop(SettingKey.VIDEO_CROP, layers),
+            video_zoom=self._resolve_number(SettingKey.VIDEO_ZOOM, layers),
+            video_pan_x=self._resolve_number(SettingKey.VIDEO_PAN_X, layers),
+            video_pan_y=self._resolve_number(SettingKey.VIDEO_PAN_Y, layers),
             volume=self._resolve_number(SettingKey.VOLUME, layers),
             mute=self._resolve_boolean(SettingKey.MUTE, layers),
             subtitle_visibility=self._resolve_boolean(

@@ -68,6 +68,9 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
         EffectivePlaybackSettings(
             speed=1.2,
             panscan=0.75,
+            video_zoom=1.0,
+            video_pan_x=0.25,
+            video_pan_y=-0.5,
             volume=80.0,
             mute=True,
             subtitle_visibility=False,
@@ -85,6 +88,9 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
         ("set_property", "video-crop", ""),
+        ("set_property", "video-zoom", 0.0),
+        ("set_property", "video-pan-x", 0.0),
+        ("set_property", "video-pan-y", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -97,6 +103,9 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
         ("set_property", "speed", 1.2),
         ("set_property", "panscan", 0.75),
         ("set_property", "video-aspect-override", "no"),
+        ("set_property", "video-zoom", 1.0),
+        ("set_property", "video-pan-x", 0.25),
+        ("set_property", "video-pan-y", -0.5),
         ("set_property", "volume", 80.0),
         ("set_property", "mute", True),
         ("set_property", "sub-visibility", False),
@@ -130,12 +139,15 @@ def test_controller_applies_settings_before_load_without_next_episode_leak() -> 
     second_load = client.commands.index(
         ("loadfile", "synthetic\\episode-02.mkv", "replace")
     )
-    assert first_load == 25
-    assert second_load == 51
-    assert client.commands[39:51] == [
+    assert first_load == 31
+    assert second_load == 63
+    assert client.commands[48:63] == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
+        ("set_property", "video-zoom", 0.0),
+        ("set_property", "video-pan-x", 0.0),
+        ("set_property", "video-pan-y", 0.0),
         ("set_property", "volume", 85.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -202,11 +214,14 @@ def test_current_item_setting_changes_are_applied_live_without_reload() -> None:
     model.replace_items(updated, item.item_id)
 
     assert controller.refresh_current_settings()
-    assert len(client.commands) == before_live_update + 25
-    assert client.commands[-12:] == [
+    assert len(client.commands) == before_live_update + 31
+    assert client.commands[-15:] == [
         ("set_property", "speed", 1.5),
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
+        ("set_property", "video-zoom", 0.0),
+        ("set_property", "video-pan-x", 0.0),
+        ("set_property", "video-pan-y", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -243,10 +258,13 @@ def test_visibility_and_signed_delays_update_and_reset_independently_live() -> N
     model.replace_items(updated, item.item_id)
 
     assert controller.refresh_current_settings()
-    assert client.commands[-12:] == [
+    assert client.commands[-15:] == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
+        ("set_property", "video-zoom", 0.0),
+        ("set_property", "video-pan-x", 0.0),
+        ("set_property", "video-pan-y", 0.0),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", False),

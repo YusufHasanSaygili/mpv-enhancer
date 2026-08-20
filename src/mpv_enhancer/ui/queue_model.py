@@ -276,6 +276,12 @@ def override_summary(settings: PlaybackSettings) -> str:
         badges.append(f"Aspect {settings.aspect_ratio.display_value}")
     if settings.video_crop is not None:
         badges.append(f"Crop {settings.video_crop.display_value}")
+    if settings.video_zoom is not None:
+        badges.append(f"Zoom {settings.video_zoom:+g}")
+    if settings.video_pan_x is not None:
+        badges.append(f"Pan X {settings.video_pan_x:+g}")
+    if settings.video_pan_y is not None:
+        badges.append(f"Pan Y {settings.video_pan_y:+g}")
     if settings.volume is not None:
         badges.append(f"{settings.volume:g}%")
     if settings.mute is not None:
