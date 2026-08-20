@@ -278,4 +278,10 @@ def override_summary(settings: PlaybackSettings) -> str:
         badges.append("Muted" if settings.mute else "Unmuted")
     if settings.subtitle_visibility is not None:
         badges.append("Subs On" if settings.subtitle_visibility else "Subs Off")
+    if settings.subtitle_languages is not None:
+        subtitle_tags = settings.subtitle_languages.to_mpv_value().replace(",", "/")
+        badges.append(f"Subs {subtitle_tags}" if subtitle_tags else "Subs Any")
+    if settings.audio_languages is not None:
+        audio_tags = settings.audio_languages.to_mpv_value().replace(",", "/")
+        badges.append(f"Audio {audio_tags}" if audio_tags else "Audio Any")
     return " · ".join(badges) if badges else "No overrides"
