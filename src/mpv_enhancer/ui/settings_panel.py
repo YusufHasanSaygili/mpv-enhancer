@@ -214,6 +214,29 @@ class SelectedItemsSettingsPanel(QWidget):
             "Choose whether subtitle visibility is inherited, on, or off.",
         )
 
+        timing_group = _settings_group("Timing", "timingSettingsGroup")
+        timing_layout = QFormLayout(timing_group)
+        self._add_numeric_setting(
+            timing_layout,
+            SettingKey.SUBTITLE_DELAY,
+            "Subtitle Delay",
+            "subtitleDelayControl",
+            "Shift subtitles from -100.00 to +100.00 seconds.",
+            decimals=2,
+            step=0.05,
+            suffix=" s",
+        )
+        self._add_numeric_setting(
+            timing_layout,
+            SettingKey.AUDIO_DELAY,
+            "Audio Delay",
+            "audioDelayControl",
+            "Shift audio from -100.00 to +100.00 seconds.",
+            decimals=2,
+            step=0.05,
+            suffix=" s",
+        )
+
         video_group = _settings_group("Video", "videoSettingsGroup")
         video_layout = QFormLayout(video_group)
         self._add_numeric_setting(
@@ -228,6 +251,7 @@ class SelectedItemsSettingsPanel(QWidget):
         content_layout.addWidget(preset_group)
         content_layout.addWidget(playback_group)
         content_layout.addWidget(track_group)
+        content_layout.addWidget(timing_group)
         content_layout.addWidget(video_group)
         content_layout.addStretch(1)
         scroll_area.setWidget(self.settings_content)

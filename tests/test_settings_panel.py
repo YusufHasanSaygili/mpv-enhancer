@@ -47,6 +47,7 @@ def test_settings_panel_has_grouped_scroll_area_and_apply_reset_actions(qtbot) -
     assert panel.findChild(QScrollArea, "settingsScrollArea") is not None
     assert _group_title(panel, "playbackSettingsGroup") == "Playback"
     assert _group_title(panel, "trackSettingsGroup") == "Tracks"
+    assert _group_title(panel, "timingSettingsGroup") == "Timing"
     assert _group_title(panel, "videoSettingsGroup") == "Video"
     assert _button(panel, "applySettingsButton").text() == "Apply"
     assert _button(panel, "resetAllSettingsButton").text() == "Reset All"
@@ -111,6 +112,14 @@ def test_different_value_multi_selection_is_mixed(qtbot) -> None:
         (SettingKey.SPEED, "speedControl", 0.25, 4.0, 1.0),
         (SettingKey.PANSCAN, "panscanControl", 0.0, 1.0, 0.0),
         (SettingKey.VOLUME, "volumeControl", 0.0, 130.0, 100.0),
+        (
+            SettingKey.SUBTITLE_DELAY,
+            "subtitleDelayControl",
+            -100.0,
+            100.0,
+            0.0,
+        ),
+        (SettingKey.AUDIO_DELAY, "audioDelayControl", -100.0, 100.0, 0.0),
     ],
 )
 def test_numeric_controls_emit_validated_patches_at_limits_and_default(

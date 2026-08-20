@@ -284,4 +284,8 @@ def override_summary(settings: PlaybackSettings) -> str:
     if settings.audio_languages is not None:
         audio_tags = settings.audio_languages.to_mpv_value().replace(",", "/")
         badges.append(f"Audio {audio_tags}" if audio_tags else "Audio Any")
+    if settings.subtitle_delay is not None:
+        badges.append(f"Sub {settings.subtitle_delay:+g}s")
+    if settings.audio_delay is not None:
+        badges.append(f"Audio {settings.audio_delay:+g}s")
     return " · ".join(badges) if badges else "No overrides"

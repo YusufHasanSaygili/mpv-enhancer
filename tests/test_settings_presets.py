@@ -94,6 +94,10 @@ def test_override_summary_is_compact_and_uses_stable_registry_order() -> None:
         volume=80.0,
         mute=True,
         subtitle_visibility=False,
+        subtitle_delay=-2.25,
+        audio_delay=1.5,
     )
 
-    assert override_summary(settings) == "1.2× · Fill · 80% · Muted · Subs Off"
+    assert override_summary(settings) == (
+        "1.2× · Fill · 80% · Muted · Subs Off · Sub -2.25s · Audio +1.5s"
+    )
