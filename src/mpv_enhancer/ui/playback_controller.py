@@ -3,6 +3,7 @@
 import math
 from dataclasses import dataclass
 from enum import StrEnum
+from uuid import UUID
 
 from PySide6.QtCore import QObject, Signal
 
@@ -12,6 +13,7 @@ from mpv_enhancer.domain.settings import (
     EffectivePlaybackSettings,
     EffectiveSettingsResolver,
     PlaybackSettings,
+    VideoDimensions,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
 from mpv_enhancer.infrastructure.mpv.playback import (
@@ -19,6 +21,7 @@ from mpv_enhancer.infrastructure.mpv.playback import (
     PlaybackEndKind,
     PlaybackEvent,
     PlaybackEventType,
+    PlaybackPropertyValue,
 )
 from mpv_enhancer.infrastructure.mpv.tracks import (
     normalize_mpv_track_list,
@@ -56,6 +59,8 @@ class PlaybackController(QObject):
     stateChanged = Signal(object)
     failureOccurred = Signal(str)
     trackAvailabilityChanged = Signal(object)
+    videoDimensionsChanged = Signal(object, object)
+    cropValidationFailed = Signal(str)
 
     def __init__(
         self,
@@ -77,6 +82,7 @@ class PlaybackController(QObject):
             if settings_resolver is None
             else settings_resolver
         )
+        self._source_dimensions: dict[UUID, VideoDimensions] = {}
         self._adapter.begin_observing(
             self._property_changed,
             self._playback_event,
@@ -93,7 +99,9 @@ class PlaybackController(QObject):
         item = self._model.items[row]
         self._generation += 1
         self.trackAvailabilityChanged.emit(None)
-        self._adapter.apply_settings(self._effective_settings(item))
+        self._source_dimensions.pop(item.item_id, None)
+        self.videoDimensionsChanged.emit(item.item_id, None)
+        self._adapter.apply_settings(self._effective_settings(item), None)
         self._adapter.load_file(item.source_path, self._generation)
         self._model.set_current_item(item.item_id)
         self._set_state(
@@ -115,7 +123,10 @@ class PlaybackController(QObject):
         )
         if item is None:
             return False
-        self._adapter.apply_settings(self._effective_settings(item))
+        self._adapter.apply_settings(
+            self._effective_settings(item),
+            self._source_dimensions.get(item.item_id),
+        )
         return True
 
     def _effective_settings(self, item: QueueItem) -> EffectivePlaybackSettings:
@@ -190,7 +201,15 @@ class PlaybackController(QObject):
         )
         return self.load_row(current_row + offset)
 
-    def _property_changed(self, name: str, value: JsonValue) -> None:
+    def _property_changed(self, name: str, value: PlaybackPropertyValue) -> None:
+        if name == "video-dimensions":
+            current_id = self._model.current_item_id
+            if isinstance(value, VideoDimensions) and current_id is not None:
+                self._source_dimensions[current_id] = value
+                self.videoDimensionsChanged.emit(current_id, value)
+            return
+        if isinstance(value, VideoDimensions):
+            return
         if name == "track-list":
             current_id = self._model.current_item_id
             item = next(
@@ -205,6 +224,9 @@ class PlaybackController(QObject):
                         tracks,
                     )
                 )
+            return
+        if name == "video-crop-error" and isinstance(value, str):
+            self.cropValidationFailed.emit(value)
             return
         if self._state.phase not in {PlaybackPhase.PLAYING, PlaybackPhase.PAUSED}:
             return

@@ -84,6 +84,7 @@ def test_settings_adapter_resets_then_applies_only_allowlisted_properties() -> N
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
+        ("set_property", "video-crop", ""),
         ("set_property", "volume", 100.0),
         ("set_property", "mute", False),
         ("set_property", "sub-visibility", True),
@@ -129,9 +130,9 @@ def test_controller_applies_settings_before_load_without_next_episode_leak() -> 
     second_load = client.commands.index(
         ("loadfile", "synthetic\\episode-02.mkv", "replace")
     )
-    assert first_load == 24
-    assert second_load == 49
-    assert client.commands[37:49] == [
+    assert first_load == 25
+    assert second_load == 51
+    assert client.commands[39:51] == [
         ("set_property", "speed", 1.0),
         ("set_property", "panscan", 0.0),
         ("set_property", "video-aspect-override", "no"),
@@ -201,7 +202,7 @@ def test_current_item_setting_changes_are_applied_live_without_reload() -> None:
     model.replace_items(updated, item.item_id)
 
     assert controller.refresh_current_settings()
-    assert len(client.commands) == before_live_update + 24
+    assert len(client.commands) == before_live_update + 25
     assert client.commands[-12:] == [
         ("set_property", "speed", 1.5),
         ("set_property", "panscan", 0.0),

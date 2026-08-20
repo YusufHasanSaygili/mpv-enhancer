@@ -10,6 +10,7 @@ from mpv_enhancer.domain.settings import (
     LanguagePreferences,
     PlaybackSettings,
     TrackSelection,
+    VideoDimensions,
 )
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue, MpvIpcEvent
 from mpv_enhancer.infrastructure.mpv.playback import (
@@ -51,7 +52,11 @@ class FakePlaybackAdapter:
         self.loaded.append(path)
         self.generations.append(generation)
 
-    def apply_settings(self, settings: EffectivePlaybackSettings) -> None:
+    def apply_settings(
+        self,
+        settings: EffectivePlaybackSettings,
+        _source_dimensions: VideoDimensions | None = None,
+    ) -> None:
         self.settings.append(settings)
 
     def set_paused(self, paused: bool) -> None:

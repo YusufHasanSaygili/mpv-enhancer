@@ -9,6 +9,7 @@ from mpv_enhancer.domain.settings import (
     SettingKey,
     SettingValueType,
     TrackSelection,
+    VideoCrop,
 )
 
 
@@ -29,6 +30,14 @@ def test_core_registry_declares_exact_safe_settings_and_metadata() -> None:
             None,
             None,
             AspectRatio.auto(),
+            True,
+        ),
+        SettingKey.VIDEO_CROP: (
+            "video-crop",
+            SettingValueType.VIDEO_CROP,
+            None,
+            None,
+            VideoCrop.off(),
             True,
         ),
         SettingKey.VOLUME: (
