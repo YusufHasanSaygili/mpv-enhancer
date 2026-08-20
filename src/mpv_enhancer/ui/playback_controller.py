@@ -2,18 +2,38 @@
 
 import math
 from dataclasses import dataclass
+from enum import StrEnum
 
 from PySide6.QtCore import QObject, Signal
 
 from mpv_enhancer.infrastructure.mpv.json_ipc import JsonValue
-from mpv_enhancer.infrastructure.mpv.playback import PlaybackAdapter
+from mpv_enhancer.infrastructure.mpv.playback import (
+    PlaybackAdapter,
+    PlaybackEndKind,
+    PlaybackEvent,
+    PlaybackEventType,
+)
 from mpv_enhancer.ui.queue_model import QueueListModel
+
+
+class PlaybackPhase(StrEnum):
+    """Explicit lifecycle states for one current playback generation."""
+
+    IDLE = "idle"
+    LOADING = "loading"
+    PLAYING = "playing"
+    PAUSED = "paused"
+    STOPPED = "stopped"
+    ENDED = "ended"
+    ERROR = "error"
 
 
 @dataclass(frozen=True, slots=True)
 class PlaybackState:
     """UI-safe transport state derived from observed mpv properties."""
 
+    phase: PlaybackPhase = PlaybackPhase.IDLE
+    generation: int = 0
     paused: bool = False
     position_seconds: float = 0.0
     duration_seconds: float = 0.0
@@ -34,7 +54,11 @@ class PlaybackController(QObject):
         self._model = model
         self._adapter = adapter
         self._state = PlaybackState()
-        self._adapter.begin_observing(self._property_changed)
+        self._generation = 0
+        self._adapter.begin_observing(
+            self._property_changed,
+            self._playback_event,
+        )
 
     @property
     def state(self) -> PlaybackState:
@@ -45,9 +69,15 @@ class PlaybackController(QObject):
         if not 0 <= row < len(self._model.items):
             return False
         item = self._model.items[row]
-        self._adapter.load_file(item.source_path)
+        self._generation += 1
+        self._adapter.load_file(item.source_path, self._generation)
         self._model.set_current_item(item.item_id)
-        self._set_state(PlaybackState())
+        self._set_state(
+            PlaybackState(
+                phase=PlaybackPhase.LOADING,
+                generation=self._generation,
+            )
+        )
         return True
 
     def toggle_play_pause(self, preferred_row: int | None = None) -> bool:
@@ -72,8 +102,14 @@ class PlaybackController(QObject):
         if self._model.current_item_id is None:
             return False
         self._adapter.stop()
+        self._generation += 1
         self._model.set_current_item(None)
-        self._set_state(PlaybackState())
+        self._set_state(
+            PlaybackState(
+                phase=PlaybackPhase.STOPPED,
+                generation=self._generation,
+            )
+        )
         return True
 
     def next(self) -> bool:
@@ -95,9 +131,13 @@ class PlaybackController(QObject):
         return self.load_row(current_row + offset)
 
     def _property_changed(self, name: str, value: JsonValue) -> None:
+        if self._state.phase not in {PlaybackPhase.PLAYING, PlaybackPhase.PAUSED}:
+            return
         if name == "pause" and isinstance(value, bool):
             self._set_state(
                 PlaybackState(
+                    phase=(PlaybackPhase.PAUSED if value else PlaybackPhase.PLAYING),
+                    generation=self._state.generation,
                     paused=value,
                     position_seconds=self._state.position_seconds,
                     duration_seconds=self._state.duration_seconds,
@@ -110,6 +150,8 @@ class PlaybackController(QObject):
         if name == "duration":
             self._set_state(
                 PlaybackState(
+                    phase=self._state.phase,
+                    generation=self._state.generation,
                     paused=self._state.paused,
                     position_seconds=min(self._state.position_seconds, number),
                     duration_seconds=number,
@@ -118,15 +160,71 @@ class PlaybackController(QObject):
         elif name == "time-pos":
             self._set_state(
                 PlaybackState(
+                    phase=self._state.phase,
+                    generation=self._state.generation,
                     paused=self._state.paused,
                     position_seconds=number,
                     duration_seconds=self._state.duration_seconds,
                 )
             )
 
+    def _playback_event(self, event: PlaybackEvent) -> None:
+        if event.generation != self._state.generation:
+            return
+        if event.event_type is PlaybackEventType.FILE_LOADED:
+            self._set_state(
+                PlaybackState(
+                    phase=(
+                        PlaybackPhase.PAUSED
+                        if self._state.paused
+                        else PlaybackPhase.PLAYING
+                    ),
+                    generation=self._state.generation,
+                    paused=self._state.paused,
+                    position_seconds=self._state.position_seconds,
+                    duration_seconds=self._state.duration_seconds,
+                )
+            )
+            return
+        if event.event_type is not PlaybackEventType.END_FILE:
+            return
+        if event.end_kind is PlaybackEndKind.EOF:
+            self._set_state(
+                PlaybackState(
+                    phase=PlaybackPhase.ENDED,
+                    generation=self._state.generation,
+                    duration_seconds=self._state.duration_seconds,
+                    position_seconds=self._state.position_seconds,
+                )
+            )
+            self.next()
+        elif event.end_kind is PlaybackEndKind.ERROR:
+            self._set_state(
+                PlaybackState(
+                    phase=PlaybackPhase.ERROR,
+                    generation=self._state.generation,
+                    duration_seconds=self._state.duration_seconds,
+                    position_seconds=self._state.position_seconds,
+                )
+            )
+        elif event.end_kind is PlaybackEndKind.STOPPED:
+            self._set_state(
+                PlaybackState(
+                    phase=PlaybackPhase.STOPPED,
+                    generation=self._state.generation,
+                )
+            )
+
     def _set_state(self, state: PlaybackState) -> None:
         if state == self._state:
             return
+        if (
+            state.phase is not self._state.phase
+            and state.phase not in _ALLOWED_TRANSITIONS[self._state.phase]
+        ):
+            raise RuntimeError(
+                f"Invalid playback transition: {self._state.phase} -> {state.phase}."
+            )
         self._state = state
         self.stateChanged.emit(state)
 
@@ -136,3 +234,37 @@ def _finite_non_negative_number(value: JsonValue) -> float | None:
         return None
     number = float(value)
     return number if math.isfinite(number) and number >= 0 else None
+
+
+_ALLOWED_TRANSITIONS: dict[PlaybackPhase, frozenset[PlaybackPhase]] = {
+    PlaybackPhase.IDLE: frozenset({PlaybackPhase.LOADING}),
+    PlaybackPhase.LOADING: frozenset(
+        {
+            PlaybackPhase.PLAYING,
+            PlaybackPhase.PAUSED,
+            PlaybackPhase.STOPPED,
+            PlaybackPhase.ERROR,
+        }
+    ),
+    PlaybackPhase.PLAYING: frozenset(
+        {
+            PlaybackPhase.LOADING,
+            PlaybackPhase.PAUSED,
+            PlaybackPhase.STOPPED,
+            PlaybackPhase.ENDED,
+            PlaybackPhase.ERROR,
+        }
+    ),
+    PlaybackPhase.PAUSED: frozenset(
+        {
+            PlaybackPhase.LOADING,
+            PlaybackPhase.PLAYING,
+            PlaybackPhase.STOPPED,
+            PlaybackPhase.ENDED,
+            PlaybackPhase.ERROR,
+        }
+    ),
+    PlaybackPhase.STOPPED: frozenset({PlaybackPhase.LOADING}),
+    PlaybackPhase.ENDED: frozenset({PlaybackPhase.LOADING, PlaybackPhase.STOPPED}),
+    PlaybackPhase.ERROR: frozenset({PlaybackPhase.LOADING, PlaybackPhase.STOPPED}),
+}
