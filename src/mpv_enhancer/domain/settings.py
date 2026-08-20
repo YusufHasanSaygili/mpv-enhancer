@@ -167,3 +167,128 @@ SETTING_SPEC_REGISTRY = SettingSpecRegistry(
         ),
     )
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PlaybackSettings:
+    """One immutable settings layer where ``None`` means inherit."""
+
+    speed: float | None = None
+    panscan: float | None = None
+    volume: float | None = None
+    mute: bool | None = None
+    subtitle_visibility: bool | None = None
+
+    def __post_init__(self) -> None:
+        for key in SettingKey:
+            value = getattr(self, key.value)
+            if value is not None:
+                object.__setattr__(
+                    self,
+                    key.value,
+                    SETTING_SPEC_REGISTRY.validate(key, value),
+                )
+
+    def value_for(self, key: SettingKey) -> SettingValue | None:
+        """Return one typed layer value without applying inheritance."""
+        value = getattr(self, key.value)
+        return value if isinstance(value, (bool, float)) else None
+
+
+@dataclass(frozen=True, slots=True)
+class EffectivePlaybackSettings:
+    """A complete immutable value after all inheritance has been resolved."""
+
+    speed: float
+    panscan: float
+    volume: float
+    mute: bool
+    subtitle_visibility: bool
+
+    def __post_init__(self) -> None:
+        for key in SettingKey:
+            value = SETTING_SPEC_REGISTRY.validate(key, getattr(self, key.value))
+            object.__setattr__(self, key.value, value)
+
+
+def _reset_number(key: SettingKey) -> float:
+    value = SETTING_SPEC_REGISTRY.require(key).reset_value
+    if isinstance(value, bool):
+        raise RuntimeError(f"{key.value} reset metadata is not numeric.")
+    return value
+
+
+def _reset_boolean(key: SettingKey) -> bool:
+    value = SETTING_SPEC_REGISTRY.require(key).reset_value
+    if not isinstance(value, bool):
+        raise RuntimeError(f"{key.value} reset metadata is not boolean.")
+    return value
+
+
+EMPTY_PLAYBACK_SETTINGS = PlaybackSettings()
+DETERMINISTIC_BASELINE = PlaybackSettings(
+    speed=_reset_number(SettingKey.SPEED),
+    panscan=_reset_number(SettingKey.PANSCAN),
+    volume=_reset_number(SettingKey.VOLUME),
+    mute=_reset_boolean(SettingKey.MUTE),
+    subtitle_visibility=_reset_boolean(SettingKey.SUBTITLE_VISIBILITY),
+)
+
+
+class EffectiveSettingsResolver:
+    """Purely resolve baseline, app, playlist, and per-item settings layers."""
+
+    def __init__(self, registry: SettingSpecRegistry = SETTING_SPEC_REGISTRY) -> None:
+        self._registry = registry
+
+    def resolve(
+        self,
+        *,
+        baseline: PlaybackSettings = DETERMINISTIC_BASELINE,
+        app_defaults: PlaybackSettings = EMPTY_PLAYBACK_SETTINGS,
+        playlist_defaults: PlaybackSettings = EMPTY_PLAYBACK_SETTINGS,
+        item_overrides: PlaybackSettings = EMPTY_PLAYBACK_SETTINGS,
+    ) -> EffectivePlaybackSettings:
+        """Return a new complete value without mutating any input layer."""
+        layers = (item_overrides, playlist_defaults, app_defaults, baseline)
+        return EffectivePlaybackSettings(
+            speed=self._resolve_number(SettingKey.SPEED, layers),
+            panscan=self._resolve_number(SettingKey.PANSCAN, layers),
+            volume=self._resolve_number(SettingKey.VOLUME, layers),
+            mute=self._resolve_boolean(SettingKey.MUTE, layers),
+            subtitle_visibility=self._resolve_boolean(
+                SettingKey.SUBTITLE_VISIBILITY,
+                layers,
+            ),
+        )
+
+    def _resolve_number(
+        self,
+        key: SettingKey,
+        layers: tuple[PlaybackSettings, ...],
+    ) -> float:
+        value = self._resolve_value(key, layers)
+        if isinstance(value, bool):
+            raise RuntimeError(f"{key.value} resolved to the wrong value type.")
+        return value
+
+    def _resolve_boolean(
+        self,
+        key: SettingKey,
+        layers: tuple[PlaybackSettings, ...],
+    ) -> bool:
+        value = self._resolve_value(key, layers)
+        if not isinstance(value, bool):
+            raise RuntimeError(f"{key.value} resolved to the wrong value type.")
+        return value
+
+    def _resolve_value(
+        self,
+        key: SettingKey,
+        layers: tuple[PlaybackSettings, ...],
+    ) -> SettingValue:
+        for layer in layers:
+            value = layer.value_for(key)
+            if value is not None:
+                return self._registry.validate(key, value)
+        raise ValueError(f"The {key.value} baseline must provide a value.")
