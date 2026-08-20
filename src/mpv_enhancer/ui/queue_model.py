@@ -272,6 +272,8 @@ def override_summary(settings: PlaybackSettings) -> str:
         badges.append(
             "Fill" if settings.panscan == 1.0 else f"Pan {settings.panscan:g}"
         )
+    if settings.aspect_ratio is not None:
+        badges.append(f"Aspect {settings.aspect_ratio.display_value}")
     if settings.volume is not None:
         badges.append(f"{settings.volume:g}%")
     if settings.mute is not None:

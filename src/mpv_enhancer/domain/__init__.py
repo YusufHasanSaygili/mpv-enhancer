@@ -19,6 +19,8 @@ from mpv_enhancer.domain.settings import (
     DETERMINISTIC_BASELINE,
     EMPTY_PLAYBACK_SETTINGS,
     SETTING_SPEC_REGISTRY,
+    AspectRatio,
+    AspectRatioMode,
     EffectivePlaybackSettings,
     EffectiveSettingsResolver,
     LanguagePreferences,
@@ -39,6 +41,8 @@ from mpv_enhancer.domain.validation import (
 )
 
 __all__ = [
+    "AspectRatio",
+    "AspectRatioMode",
     "DEFAULT_SUPPORTED_MEDIA_EXTENSIONS",
     "DETERMINISTIC_BASELINE",
     "EMPTY_PLAYBACK_SETTINGS",

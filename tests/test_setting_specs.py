@@ -4,6 +4,7 @@ import pytest
 
 from mpv_enhancer.domain.settings import (
     SETTING_SPEC_REGISTRY,
+    AspectRatio,
     LanguagePreferences,
     SettingKey,
     SettingValueType,
@@ -20,6 +21,14 @@ def test_core_registry_declares_exact_safe_settings_and_metadata() -> None:
             0.0,
             1.0,
             0.0,
+            True,
+        ),
+        SettingKey.ASPECT_RATIO: (
+            "video-aspect-override",
+            SettingValueType.ASPECT_RATIO,
+            None,
+            None,
+            AspectRatio.auto(),
             True,
         ),
         SettingKey.VOLUME: (
