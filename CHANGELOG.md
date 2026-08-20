@@ -6,6 +6,23 @@ corresponding three-part version such as `0.1.0`.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-20
+
+### Added
+
+- Ordered queue domain models with stable UUID identity and duplicate-path
+  support.
+- Explorer file drop with centralized media-extension filtering, insertion
+  feedback, and partial rejection messages.
+- Internal drag reorder and `Alt+Up`/`Alt+Down` keyboard movement without
+  copying item metadata.
+- Ctrl/Shift extended selection, Ctrl+A, and an accessible selection summary.
+- Selected-item removal, confirmed queue clearing, current-item safeguards,
+  and exact Undo/Redo for queue edits.
+- Accessible empty-state instructions, drag handles, title elision, and an
+  override-status placeholder.
+- A clean-environment release smoke test covering a 20-file queue workflow.
+
 ## [0.1.1] - 2026-08-20
 
 ### Fixed
@@ -31,6 +48,7 @@ behavior is identical to v0.1.
 - Required Windows CI, Dependabot configuration, and a tag-driven pre-release
   workflow with dependency audit, SBOM, checksums, and public-asset smoke test.
 
-[Unreleased]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.2...HEAD
+[0.2.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.1.1...v0.2
 [0.1.1]: https://github.com/YusufHasanSaygili/mpv-enhancer/compare/v0.1...v0.1.1
 [0.1.0]: https://github.com/YusufHasanSaygili/mpv-enhancer/releases/tag/v0.1

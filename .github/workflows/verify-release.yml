@@ -91,7 +91,7 @@ jobs:
             "- Public download: PASS",
             "- SHA-256 verification: PASS",
             "- Fresh Python 3.12 environment install: PASS",
-            "- Offscreen application shell launch and close: PASS",
+            "- Offscreen 20-file queue drop, selection, reorder, undo, and shell lifecycle: PASS",
             "",
             "## Downloaded assets",
             ""
