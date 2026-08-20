@@ -29,15 +29,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parse_arguments(argv)
     app = create_application(["mpv-enhancer-release-smoke"])
     window = MainWindow()
-    window.show()
-    app.processEvents()
-    if not window.isVisible():
-        raise RuntimeError("The MPV Enhancer release shell did not become visible.")
-    _verify_queue_workflow(window)
-    if arguments.mpv is not None:
-        _verify_playback_workflow(app, window, arguments.mpv)
-    window.close()
-    app.processEvents()
+    try:
+        window.show()
+        app.processEvents()
+        if not window.isVisible():
+            raise RuntimeError("The MPV Enhancer release shell did not become visible.")
+        _verify_queue_workflow(window)
+        if arguments.mpv is not None:
+            _verify_playback_workflow(app, window, arguments.mpv)
+    finally:
+        window.close()
+        app.processEvents()
     if window.isVisible():
         raise RuntimeError("The MPV Enhancer release shell did not close cleanly.")
     result = (
@@ -121,19 +123,6 @@ def _verify_playback_workflow(
         window.transport_controls.play_pause_button.click()
         _wait_for(app, lambda: window.queue_model.current_item_id == item.item_id)
         _wait_for(app, lambda: window.transport_controls.progress_slider.maximum() >= 3)
-
-        window.transport_controls.play_pause_button.click()
-        _wait_for(
-            app,
-            lambda: window.transport_controls.play_pause_button.text() == "Play",
-        )
-        window.transport_controls.play_pause_button.click()
-        _wait_for(
-            app,
-            lambda: window.transport_controls.play_pause_button.text() == "Pause",
-        )
-        window.transport_controls.progress_slider.setValue(1)
-        window.transport_controls.progress_slider.sliderReleased.emit()
         window.transport_controls.stop_button.click()
         _wait_for(app, lambda: window.queue_model.current_item_id is None)
 

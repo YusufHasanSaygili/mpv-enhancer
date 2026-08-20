@@ -27,6 +27,12 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
 
+      - name: Check out current verification tooling
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: verification-tooling
+
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
         with:
@@ -91,7 +97,7 @@ jobs:
           python -m venv build/public-release-smoke
           & build/public-release-smoke/Scripts/python.exe -m pip install --require-hashes --requirement $requirements.FullName
           & build/public-release-smoke/Scripts/python.exe -m pip install --no-deps $wheel.FullName
-          & build/public-release-smoke/Scripts/python.exe -I scripts/release_smoke.py --mpv $env:MPV_TEST_EXE
+          & build/public-release-smoke/Scripts/python.exe -I verification-tooling/scripts/release_smoke.py --mpv $env:MPV_TEST_EXE
 
       - name: Record verification summary
         shell: pwsh

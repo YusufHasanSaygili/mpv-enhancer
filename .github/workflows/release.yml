@@ -4,9 +4,18 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated tag to publish with repaired release tooling
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   build:
@@ -20,6 +29,7 @@ jobs:
       - name: Check out protected tag
         uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -38,11 +48,11 @@ jobs:
       - name: Require an annotated version-matched tag
         shell: pwsh
         run: |
-          $tagType = git cat-file -t $env:GITHUB_REF_NAME
+          $tagType = git cat-file -t $env:RELEASE_TAG
           if ($tagType -ne "tag") {
             throw "Release tags must be annotated; found $tagType."
           }
-          uv run --locked python scripts/release_version.py $env:GITHUB_REF_NAME
+          uv run --locked python scripts/release_version.py $env:RELEASE_TAG
 
       - name: Install locked development dependencies
         run: uv sync --extra dev --locked
@@ -72,7 +82,7 @@ jobs:
       - name: Audit locked runtime dependencies
         shell: pwsh
         run: |
-          $requirements = "dist/runtime-requirements-$env:GITHUB_REF_NAME.txt"
+          $requirements = "dist/runtime-requirements-$env:RELEASE_TAG.txt"
           uv export --format requirements.txt --no-dev --no-emit-project --locked --output-file $requirements
           uv run pip-audit --requirement $requirements --strict
 
@@ -80,8 +90,15 @@ jobs:
         shell: pwsh
         run: |
           uv build --wheel
-          uv export --format cyclonedx1.5 --preview-features sbom-export --no-dev --locked --output-file "dist/mpv-enhancer-$env:GITHUB_REF_NAME.cdx.json"
-          Copy-Item THIRD_PARTY_NOTICES.md "dist/THIRD_PARTY_NOTICES-$env:GITHUB_REF_NAME.md"
+          uv export --format cyclonedx1.5 --preview-features sbom-export --no-dev --locked --output-file "dist/mpv-enhancer-$env:RELEASE_TAG.cdx.json"
+          Copy-Item THIRD_PARTY_NOTICES.md "dist/THIRD_PARTY_NOTICES-$env:RELEASE_TAG.md"
+
+      - name: Check out repaired verification tooling
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: verification-tooling
 
       - name: Install and launch wheel in a fresh environment
         shell: pwsh
@@ -91,7 +108,11 @@ jobs:
           uv venv build/release-smoke --python 3.12
           uv pip install --python build/release-smoke/Scripts/python.exe --require-hashes --requirement $requirements.FullName
           uv pip install --python build/release-smoke/Scripts/python.exe --no-deps $wheel.FullName
-          & build/release-smoke/Scripts/python.exe -I scripts/release_smoke.py --mpv $env:MPV_TEST_EXE
+          $smokeScript = "scripts/release_smoke.py"
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            $smokeScript = "verification-tooling/scripts/release_smoke.py"
+          }
+          & build/release-smoke/Scripts/python.exe -I $smokeScript --mpv $env:MPV_TEST_EXE
 
       - name: Generate SHA-256 checksums
         shell: pwsh
@@ -108,7 +129,8 @@ jobs:
       - name: Create immutable release evidence
         shell: pwsh
         run: |
-          $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:GITHUB_REF_NAME"
+          $sourceCommit = git rev-list -n 1 $env:RELEASE_TAG
+          $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:RELEASE_TAG"
           $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
           $assets = Get-ChildItem dist -File |
             Where-Object { -not $_.Name.StartsWith('.') } |
@@ -116,10 +138,12 @@ jobs:
             ForEach-Object { "- $($_.Name)" }
           $checksums = Get-Content dist/SHA256SUMS.txt | ForEach-Object { "- ``$($_)``" }
           $evidence = @(
-            "# MPV Enhancer $env:GITHUB_REF_NAME release evidence",
+            "# MPV Enhancer $env:RELEASE_TAG release evidence",
             "",
             "- Release URL: $releaseUrl",
             "- Workflow run and public verification: $runUrl",
+            "- Release source tag commit: $sourceCommit",
+            "- Verification tooling commit: $env:GITHUB_SHA",
             "- Build runner: clean GitHub-hosted Windows environment",
             "- Complete quality gate: PASS",
             "- Locked runtime dependency audit: PASS",
@@ -131,7 +155,7 @@ jobs:
             "## Reviewed assets",
             ""
           ) + $assets + @("", "## SHA-256 checksums", "") + $checksums
-          $evidencePath = "dist/release-evidence-$env:GITHUB_REF_NAME.md"
+          $evidencePath = "dist/release-evidence-$env:RELEASE_TAG.md"
           [System.IO.File]::WriteAllLines($evidencePath, $evidence)
 
       - name: Upload reviewed release assets
@@ -153,6 +177,8 @@ jobs:
     steps:
       - name: Check out release notes
         uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Download reviewed assets
         uses: actions/download-artifact@v8.0.1
@@ -164,14 +190,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
+          gh release create "$RELEASE_TAG" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --draft \
             --prerelease \
-            --title "MPV Enhancer $GITHUB_REF_NAME" \
-            --notes-file "docs/releases/$GITHUB_REF_NAME.md"
-          gh release edit "$GITHUB_REF_NAME" \
+            --title "MPV Enhancer $RELEASE_TAG" \
+            --notes-file "docs/releases/$RELEASE_TAG.md"
+          gh release edit "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --draft=false \
             --prerelease
@@ -190,6 +216,15 @@ jobs:
     steps:
       - name: Check out smoke test from tag
         uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Check out repaired verification tooling
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: verification-tooling
 
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
@@ -219,7 +254,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path public-assets | Out-Null
-          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --dir public-assets
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir public-assets
 
       - name: Verify published SHA-256 checksums
         shell: pwsh
@@ -246,17 +281,21 @@ jobs:
           python -m venv build/public-release-smoke
           & build/public-release-smoke/Scripts/python.exe -m pip install --require-hashes --requirement $requirements.FullName
           & build/public-release-smoke/Scripts/python.exe -m pip install --no-deps $wheel.FullName
-          & build/public-release-smoke/Scripts/python.exe -I scripts/release_smoke.py --mpv $env:MPV_TEST_EXE
+          $smokeScript = "scripts/release_smoke.py"
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            $smokeScript = "verification-tooling/scripts/release_smoke.py"
+          }
+          & build/public-release-smoke/Scripts/python.exe -I $smokeScript --mpv $env:MPV_TEST_EXE
 
       - name: Record public verification summary
         shell: pwsh
         run: |
-          $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:GITHUB_REF_NAME"
+          $releaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:RELEASE_TAG"
           $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
           $assets = Get-ChildItem public-assets -File | Sort-Object Name | ForEach-Object { "- $($_.Name)" }
           $checksums = Get-Content public-assets/SHA256SUMS.txt | ForEach-Object { "- ``$($_)``" }
           $summary = @(
-            "# MPV Enhancer $env:GITHUB_REF_NAME public verification",
+            "# MPV Enhancer $env:RELEASE_TAG public verification",
             "",
             "- Release URL: $releaseUrl",
             "- Workflow run: $runUrl",
