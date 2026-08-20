@@ -8,6 +8,7 @@ from mpv_enhancer.domain.models import Playlist, QueueItem
 from mpv_enhancer.domain.selection_settings import (
     SettingPatch,
     apply_selection_patch,
+    reset_selection_setting,
 )
 from mpv_enhancer.domain.settings import (
     EffectivePlaybackSettings,
@@ -211,6 +212,62 @@ def test_current_item_setting_changes_are_applied_live_without_reload() -> None:
         ("set_property", "sub-delay", 0.0),
         ("set_property", "audio-delay", 0.0),
     ]
+
+
+def test_visibility_and_signed_delays_update_and_reset_independently_live() -> None:
+    item = _item("episode-01.mkv")
+    model = QueueListModel(Playlist((item,)))
+    client = RecordingIpcClient()
+    controller = PlaybackController(model, MpvJsonPlaybackAdapter(client))
+    assert controller.load_row(0)
+    updated = apply_selection_patch(
+        model.items,
+        (item.item_id,),
+        SettingPatch(SettingKey.SUBTITLE_VISIBILITY, False),
+    )
+    updated = apply_selection_patch(
+        updated,
+        (item.item_id,),
+        SettingPatch(SettingKey.SUBTITLE_DELAY, -2.25),
+    )
+    updated = apply_selection_patch(
+        updated,
+        (item.item_id,),
+        SettingPatch(SettingKey.AUDIO_DELAY, 1.5),
+    )
+    model.replace_items(updated, item.item_id)
+
+    assert controller.refresh_current_settings()
+    assert client.commands[-11:] == [
+        ("set_property", "speed", 1.0),
+        ("set_property", "panscan", 0.0),
+        ("set_property", "volume", 100.0),
+        ("set_property", "mute", False),
+        ("set_property", "sub-visibility", False),
+        ("set_property", "slang", ""),
+        ("set_property", "alang", ""),
+        ("set_property", "sid", "auto"),
+        ("set_property", "aid", "auto"),
+        ("set_property", "sub-delay", -2.25),
+        ("set_property", "audio-delay", 1.5),
+    ]
+
+    reset = reset_selection_setting(
+        model.items,
+        (item.item_id,),
+        SettingKey.SUBTITLE_DELAY,
+    )
+    model.replace_items(reset, item.item_id)
+
+    assert controller.refresh_current_settings()
+    assert client.commands[-2:] == [
+        ("set_property", "sub-delay", 0.0),
+        ("set_property", "audio-delay", 1.5),
+    ]
+    assert model.items[0].overrides == PlaybackSettings(
+        subtitle_visibility=False,
+        audio_delay=1.5,
+    )
 
 
 def test_panel_patch_updates_only_selected_queue_items(qtbot) -> None:
