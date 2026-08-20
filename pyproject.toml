@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mpv-enhancer"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Windows-first desktop playlist controller and playback shell for mpv"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -31,6 +31,7 @@ mpv-enhancer = "mpv_enhancer.app:main"
 dev = [
     "detect-secrets>=1.5,<2",
     "mypy>=1.15,<2",
+    "pip-audit>=2.10.1,<3",
     "pytest>=8.3,<10",
     "pytest-cov>=6,<8",
     "pytest-qt>=4.4,<5",
