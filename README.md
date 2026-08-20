@@ -1,5 +1,7 @@
 # MPV Enhancer
 
+[![CI](https://github.com/YusufHasanSaygili/mpv-enhancer/actions/workflows/ci.yml/badge.svg)](https://github.com/YusufHasanSaygili/mpv-enhancer/actions/workflows/ci.yml)
+
 MPV Enhancer is a Windows-first desktop playlist controller and playback shell
 for [mpv](https://mpv.io/). It is currently in early development.
 
@@ -9,15 +11,17 @@ application will use Python, PySide6, and Qt Widgets.
 
 ## Project status
 
-The public repository foundation is available. The Python project bootstrap is
-the next planned development milestone; installation and usage instructions
-will be added with the first runnable development version.
+The v0.1 foundation is under active development. The repository contains a
+runnable three-region desktop shell, persistent mpv preferences, safe local
+paths and rotating diagnostics, automated tests, and a Windows CI quality gate.
+Playback, queue behavior, and per-item settings are planned for later releases.
 
 ## Contributing
 
-Please use the issue templates to report a bug or propose an enhancement.
-Development commands are documented below; a full contributor guide will be
-added in a later foundation milestone.
+Please use the issue templates to report a bug or propose an enhancement. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the complete development, testing,
+privacy, and pull request workflow. Security vulnerabilities must be reported
+privately as described in [SECURITY.md](SECURITY.md).
 
 ## Development setup
 
@@ -25,7 +29,7 @@ MPV Enhancer uses Python 3.12. The recommended workflow uses
 [uv](https://docs.astral.sh/uv/):
 
 ```powershell
-uv sync --extra dev
+uv sync --extra dev --locked
 uv run python -c "import mpv_enhancer; print(mpv_enhancer.__version__)"
 uv run pytest
 uv run mpv-enhancer
@@ -52,7 +56,7 @@ python -m pytest
 ```
 
 The current application opens an English three-region desktop shell. Playback,
-queue behavior, and per-item settings will be added in later milestones.
+queue behavior, and per-item settings will be added in later releases.
 
 ## mpv setup
 
@@ -75,4 +79,5 @@ not send telemetry or upload logs.
 
 ## License
 
-MPV Enhancer is available under the [MIT License](LICENSE).
+MPV Enhancer is available under the [MIT License](LICENSE). See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency notices.
