@@ -61,6 +61,17 @@ class MainWindow(QMainWindow):
         self.queue_model = QueueListModel()
         self.queue_view = QueueDropListView(self.queue_model)
         self.queue_view.dropMessage.connect(self.statusBar().showMessage)
+        selection_summary_label = settings.findChild(
+            QLabel,
+            "settingsRegionDescription",
+        )
+        if selection_summary_label is None:
+            raise RuntimeError("The selection summary label could not be created.")
+        self.selection_summary_label = selection_summary_label
+        self.selection_summary_label.setText(self.queue_view.selection_summary)
+        self.queue_view.selectionSummaryChanged.connect(
+            self.selection_summary_label.setText
+        )
         queue = self._create_region(
             "queueRegion",
             "Queue",
