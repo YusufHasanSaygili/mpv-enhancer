@@ -2,7 +2,7 @@
 
 import math
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from types import MappingProxyType
 
@@ -194,6 +194,34 @@ class PlaybackSettings:
         value = getattr(self, key.value)
         return value if isinstance(value, (bool, float)) else None
 
+    def with_value(self, key: SettingKey, value: SettingValue) -> "PlaybackSettings":
+        """Return a copy with one validated property changed."""
+        normalized = SETTING_SPEC_REGISTRY.validate(key, value)
+        if key is SettingKey.SPEED:
+            return replace(self, speed=_require_number(key, normalized))
+        if key is SettingKey.PANSCAN:
+            return replace(self, panscan=_require_number(key, normalized))
+        if key is SettingKey.VOLUME:
+            return replace(self, volume=_require_number(key, normalized))
+        if key is SettingKey.MUTE:
+            return replace(self, mute=_require_boolean(key, normalized))
+        return replace(
+            self,
+            subtitle_visibility=_require_boolean(key, normalized),
+        )
+
+    def without_value(self, key: SettingKey) -> "PlaybackSettings":
+        """Return a copy with one property restored to inherited state."""
+        if key is SettingKey.SPEED:
+            return replace(self, speed=None)
+        if key is SettingKey.PANSCAN:
+            return replace(self, panscan=None)
+        if key is SettingKey.VOLUME:
+            return replace(self, volume=None)
+        if key is SettingKey.MUTE:
+            return replace(self, mute=None)
+        return replace(self, subtitle_visibility=None)
+
 
 @dataclass(frozen=True, slots=True)
 class EffectivePlaybackSettings:
@@ -211,18 +239,24 @@ class EffectivePlaybackSettings:
             object.__setattr__(self, key.value, value)
 
 
-def _reset_number(key: SettingKey) -> float:
-    value = SETTING_SPEC_REGISTRY.require(key).reset_value
+def _require_number(key: SettingKey, value: SettingValue) -> float:
     if isinstance(value, bool):
-        raise RuntimeError(f"{key.value} reset metadata is not numeric.")
+        raise RuntimeError(f"{key.value} metadata is not numeric.")
     return value
+
+
+def _require_boolean(key: SettingKey, value: SettingValue) -> bool:
+    if not isinstance(value, bool):
+        raise RuntimeError(f"{key.value} metadata is not boolean.")
+    return value
+
+
+def _reset_number(key: SettingKey) -> float:
+    return _require_number(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
 
 
 def _reset_boolean(key: SettingKey) -> bool:
-    value = SETTING_SPEC_REGISTRY.require(key).reset_value
-    if not isinstance(value, bool):
-        raise RuntimeError(f"{key.value} reset metadata is not boolean.")
-    return value
+    return _require_boolean(key, SETTING_SPEC_REGISTRY.require(key).reset_value)
 
 
 EMPTY_PLAYBACK_SETTINGS = PlaybackSettings()
